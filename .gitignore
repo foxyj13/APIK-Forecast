@@ -1,0 +1,34 @@
+# Виртуальное окружение
+venv/
+env/
+.env
+ENV/
+
+# Кэш Python (скомпилированные файлы)
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Настройки VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/launch.json
+
+# Распределенные системы (если будете собирать пакет)
+dist/
+build/
+*.egg-info/
+
+# Файлы операционной системы
+Thumbs.db
+.DS_Store
+
+# Файлы/структура проекта
+config/
+export_data/
+images/
+input/
+log/
+run/
+web/
+requirements_*.txt
