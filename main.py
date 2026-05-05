@@ -1,5 +1,6 @@
 # Arshan Project
 import argparse
+import datetime
 import logging
 import os
 import sys
@@ -88,27 +89,77 @@ def read_stations(stations_file: str) -> list:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Meteostations reader")
+    # Получение аргументов программы
+    parser = argparse.ArgumentParser(
+        description="Meteostations and model forecasts reader"
+    )
+
+    parser.add_argument(
+        "--mode",
+        help="Program mode (obs_plot | obs_forec_plot | forec_adj):\n\tobs_plot - observations only plot only;\n\tobs_forec_plot - observations and global forecasts plot only;\n\tforec_adj - get local forecasts and plot them and observations",
+        type=str,
+        choices=["obs_plot", "obs_forec_plot", "forec_adj"],
+        default="obs_plot",
+    )
+    parser.add_argument(
+        "--time-depth",
+        help="Time depth for observations and/or forecasts (1d, 7d, 30d, 365d, c_yr)",
+        type=str,
+        choices=["1d", "7d", "30d", "365d", "c_yr"],
+        default="1d",
+    )
+    parser.add_argument(
+        "--time-forecast",
+        help="Time forecast (0d, 1d, 2d, ..., 14d)",
+        type=str,
+        default="0d",
+    )
+    parser.add_argument(
+        "--qc-gen",
+        help="Turn off/on QC-report generation mode (no, yes)",
+        type=str,
+        choices=["no", "yes"],
+        default="no",
+    )
+    now = datetime.date.today()
+    parser.add_argument(
+        "--now-date",
+        help="Now date for QC-report generation (yyyy-mm-dd)",
+        type=str,
+        default=now,
+    )
     parser.add_argument(
         "--config",
         help="Configuration file (config.ini)",
         type=str,
         default="config.ini",
     )
-    parser.add_argument(
-        "--time-depth",
-        help="Time depth (1d, 7d, 30d, 365d, c_yr)",
-        type=str,
-        choices=["1d", "7d", "30d", "365d", "c_yr"],
-    )
     args = parser.parse_args()
-    time_depth = args.time_depth if args.time_depth else "30d"
+    time_depth = args.time_depth
+    time_forecast = args.time_forecast
+    now_date = (
+        args.now_date
+    )  # datetime.datetime.strptime(args.now_date, "%Y-%m-%d").date()
 
+    if (args.mode == "forec_adj") and (time_forecast == "0d"):
+        print(
+            "Program arguments ERROR: for --mode=forec_adj value for --time-forecast must be > 0d"
+        )
+        sys.exit(1)
+
+    if (args.qc_gen == "yes") and (now_date == now):
+        print(
+            "Program arguments ERROR: for --qc-gen=yes value for --now_date must be < today date"
+        )
+        sys.exit(1)
+
+    # Чтение конфигурационного файла .ini (args.config)
     config = ConfigParser()
     config.read(
         os.path.join(str(os.path.dirname(__file__)), args.config), encoding="utf8"
     )
     db_config = config["DB"]
+    om_config = config["OM"]
     main_config = config["main"]
 
     if not os.path.exists(main_config["log-folder"]):
@@ -127,8 +178,10 @@ def main():
 
     logging.info("Начинаем работу!")
 
+    # Чтение перечня станций и перечня параметров для каждой станции
     stations = read_stations(main_config["stations-file"])
 
+    # -----------------------------------------------------
     db_reader = DBReader(
         server=db_config["server"],
         port=db_config["port"],
