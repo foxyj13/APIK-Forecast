@@ -136,6 +136,7 @@ def main():
         default="config.ini",
     )
     args = parser.parse_args()
+    mode = args.mode
     time_depth = args.time_depth
     time_forecast = args.time_forecast
     now_date = args.now_date
@@ -206,61 +207,67 @@ def main():
             for idx in sorted(dell_stations, reverse=True):
                 del stations[idx]
 
-    # ------------ Чтение глобальных прогнозов ------------
-    om_reader = OMReader(url=om_config["url"], model=om_config["model"])
+    if mode in ["obs_forec_plot", "forec_adj"]:
+        # ------------ Чтение глобальных прогнозов ------------
+        om_reader = OMReader(url=om_config["url"], model=om_config["model"])
 
-    if om_reader.connect():
-        logging.info("Считываем глобальные прогнозы")
+        if om_reader.connect():
+            logging.info("Считываем глобальные прогнозы")
 
-    # ------------ Чтение глобальных прогнозов ------------
+        # ------------ Чтение глобальных прогнозов ------------
 
-    # ------------ Предобработка данных ------------
+        # ------------ Предобработка данных ------------
 
-    # ------------ Корректировка глобальных прогнозов ------------
+        # ------------ Корректировка глобальных прогнозов ------------
 
-    # ------------ Вывод результата: отрисовка, экспорт, html ------------
-    # all_stations = []
-    # for station in stations:
-    #     if station:
-    #         all_stations.append(station)
-    #     else:
-    #         logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
-    all_stations = stations
+        # ------------ Вывод результата: отрисовка, экспорт, html ------------
 
-    plot_mode = main_config.get("mode", "")
-    if plot_mode == "interactive":
-        # Построение интерактивных графиков
-        # Выбор перерменных для отрисовки (если указаны в config.ini, то: берем их; иначе: все)
-        if main_config.get("variables", ""):
-            variables = list(map(str.strip, main_config["variables"].split(",")))
-        else:
-            all_variables_names = set()
-            for station in stations:
-                all_variables_names.update(set(station["parameters"].keys()))
-            variables = list(all_variables_names)
-
-        if all_stations:
-            # Отрисовка данных
-            logging.info("Строим интерактивные графики")
-            plotter_js = PlotterJS(
-                config=dict(main_config), stations=all_stations, time_depth=time_depth
-            )
-            plotter_js.make_plots(variables=variables)
-
-    elif plot_mode == "static":
-        # Построение статичных графиков
-        logging.info("Строим статичные графики")
-        plotter = Plotter(dict(main_config))
-        if all_stations:
-            for station in all_stations:
-                plotter.make_table(station=station)
-                plotter.make_plots(station=station, time_depth=time_depth)
-
-                # Экспорт в CSV (если включен в congig.ini)
-                #   Проверка на включенность опции внутри самой функции export_to_csv
-                plotter.export_to_csv(station=station, time_depth=time_depth)
     else:
-        logging.error('Неизвестный режим отрисовки: "%s".', plot_mode)
+        # ------------ Отрисовка тольео наблюдений, экспорт, html ------------
+        # all_stations = []
+        # for station in stations:
+        #     if station:
+        #         all_stations.append(station)
+        #     else:
+        #         logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
+        all_stations = stations
+
+        plot_mode = main_config.get("mode", "")
+        if plot_mode == "interactive":
+            # Построение интерактивных графиков
+            # Выбор перерменных для отрисовки (если указаны в config.ini, то: берем их; иначе: все)
+            if main_config.get("variables", ""):
+                variables = list(map(str.strip, main_config["variables"].split(",")))
+            else:
+                all_variables_names = set()
+                for station in stations:
+                    all_variables_names.update(set(station["parameters"].keys()))
+                variables = list(all_variables_names)
+
+            if all_stations:
+                # Отрисовка данных
+                logging.info("Строим интерактивные графики")
+                plotter_js = PlotterJS(
+                    config=dict(main_config),
+                    stations=all_stations,
+                    time_depth=time_depth,
+                )
+                plotter_js.make_plots(variables=variables)
+
+        elif plot_mode == "static":
+            # Построение статичных графиков
+            logging.info("Строим статичные графики")
+            plotter = Plotter(dict(main_config))
+            if all_stations:
+                for station in all_stations:
+                    plotter.make_table(station=station)
+                    plotter.make_plots(station=station, time_depth=time_depth)
+
+                    # Экспорт в CSV (если включен в congig.ini)
+                    #   Проверка на включенность опции внутри самой функции export_to_csv
+                    plotter.export_to_csv(station=station, time_depth=time_depth)
+        else:
+            logging.error('Неизвестный режим отрисовки: "%s".', plot_mode)
 
     logging.info("Заканчиваем работу")
 
