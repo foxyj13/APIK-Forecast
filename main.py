@@ -13,6 +13,7 @@ import openpyxl
 from plotter import Plotter
 from plotter_js import PlotterJS
 from dbreader import DBReader
+from omreader import OMReader
 
 
 def init_logging(config):
@@ -89,7 +90,7 @@ def read_stations(stations_file: str) -> list:
 
 
 def main():
-    # Получение аргументов программы
+    # ------------ Получение аргументов программы ------------
     parser = argparse.ArgumentParser(
         description="Meteostations and model forecasts reader"
     )
@@ -137,9 +138,7 @@ def main():
     args = parser.parse_args()
     time_depth = args.time_depth
     time_forecast = args.time_forecast
-    now_date = (
-        args.now_date
-    )  # datetime.datetime.strptime(args.now_date, "%Y-%m-%d").date()
+    now_date = args.now_date
 
     if (args.mode == "forec_adj") and (time_forecast == "0d"):
         print(
@@ -153,7 +152,7 @@ def main():
         )
         sys.exit(1)
 
-    # Чтение конфигурационного файла .ini (args.config)
+    # ------------ Чтение конфигурационного файла .ini (args.config) ------------
     config = ConfigParser()
     config.read(
         os.path.join(str(os.path.dirname(__file__)), args.config), encoding="utf8"
@@ -174,6 +173,9 @@ def main():
     if not os.path.exists(main_config["csv-folder"]):
         os.mkdir(main_config["csv-folder"])
 
+    if args.qc_gen == "yes":
+        main_config["export_enable"] = "True"
+
     init_logging(config)
 
     logging.info("Начинаем работу!")
@@ -181,7 +183,7 @@ def main():
     # Чтение перечня станций и перечня параметров для каждой станции
     stations = read_stations(main_config["stations-file"])
 
-    # -----------------------------------------------------
+    # ------------ Чтение данных наблюдений ------------
     db_reader = DBReader(
         server=db_config["server"],
         port=db_config["port"],
@@ -190,9 +192,45 @@ def main():
         database=db_config["database"],
     )
 
-    mode = main_config.get("mode", "")
-    if mode == "interactive":
-        # Это для построения интерактивных графиков.
+    if db_reader.connect():
+        logging.info("Считываем данные наблюдений")
+        dell_stations = []
+        for idx, station in enumerate(stations):
+            station = db_reader.get_station_data(station=station, time_depth=time_depth)
+            if not station:
+                dell_stations.append(idx)
+                logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
+
+        # Удаление из рассмотрения станций, наблюдения для которых считать не удалось
+        if dell_stations:
+            for idx in sorted(dell_stations, reverse=True):
+                del stations[idx]
+
+    # ------------ Чтение глобальных прогнозов ------------
+    om_reader = OMReader(url=om_config["url"], model=om_config["model"])
+
+    if om_reader.connect():
+        logging.info("Считываем глобальные прогнозы")
+
+    # ------------ Чтение глобальных прогнозов ------------
+
+    # ------------ Предобработка данных ------------
+
+    # ------------ Корректировка глобальных прогнозов ------------
+
+    # ------------ Вывод результата: отрисовка, экспорт, html ------------
+    # all_stations = []
+    # for station in stations:
+    #     if station:
+    #         all_stations.append(station)
+    #     else:
+    #         logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
+    all_stations = stations
+
+    plot_mode = main_config.get("mode", "")
+    if plot_mode == "interactive":
+        # Построение интерактивных графиков
+        # Выбор перерменных для отрисовки (если указаны в config.ini, то: берем их; иначе: все)
         if main_config.get("variables", ""):
             variables = list(map(str.strip, main_config["variables"].split(",")))
         else:
@@ -201,55 +239,28 @@ def main():
                 all_variables_names.update(set(station["parameters"].keys()))
             variables = list(all_variables_names)
 
-        if db_reader.connect():
-            # Read stations data.
-            logging.info("Считываем данные")
-            all_stations = []
-            for station in stations:
-                station = db_reader.get_station_data(
-                    station=station, time_depth=time_depth
-                )
-                if station:
-                    all_stations.append(station)
-                else:
-                    logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
-            # Plot stations data.
+        if all_stations:
+            # Отрисовка данных
             logging.info("Строим интерактивные графики")
             plotter_js = PlotterJS(
                 config=dict(main_config), stations=all_stations, time_depth=time_depth
             )
             plotter_js.make_plots(variables=variables)
 
-    elif mode == "static":
-        # Это для построения статичных графиков.
+    elif plot_mode == "static":
+        # Построение статичных графиков
         logging.info("Строим статичные графики")
         plotter = Plotter(dict(main_config))
-        if db_reader.connect():
-            export_enabled = main_config.getboolean(
-                "export-enable"
-            )  # main_config["export-enable"]
-            for station in stations:
-                station = db_reader.get_station_data(
-                    station=station, time_depth=time_depth
-                )
-                if station:
-                    plotter.make_table(station=station)
-                    plotter.make_plots(station=station, time_depth=time_depth)
-                    # Экспорт в CSV (если включен)
-                    if export_enabled:
-                        if station:
-                            plotter.export_to_csv(
-                                station=station, time_depth=time_depth
-                            )
-                        else:
-                            logging.warning(
-                                "Не удалось получить данные за год для станции %s",
-                                station["code"],
-                            )
-                else:
-                    logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
+        if all_stations:
+            for station in all_stations:
+                plotter.make_table(station=station)
+                plotter.make_plots(station=station, time_depth=time_depth)
+
+                # Экспорт в CSV (если включен в congig.ini)
+                #   Проверка на включенность опции внутри самой функции export_to_csv
+                plotter.export_to_csv(station=station, time_depth=time_depth)
     else:
-        logging.error('Неизвестный режим: "%s".', mode)
+        logging.error('Неизвестный режим отрисовки: "%s".', plot_mode)
 
     logging.info("Заканчиваем работу")
 

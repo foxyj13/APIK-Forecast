@@ -11,6 +11,7 @@ class Plotter:
     def __init__(self, config: dict):
         self._config = config
         self.export_enabled = config.get('export-enable', 'false').lower() == 'true'
+        #self.export_enabled = config.getboolean("export-enable")
         #self.export_folder = config.get('csv-folder')
 
     def export_to_csv(self, station: dict, time_depth: str):
