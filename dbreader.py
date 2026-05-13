@@ -136,8 +136,8 @@ class DBReader:
 
             # Prepare
             station_timeshift = datetime.timedelta(hours=rows[0].timezone)
-            result["time_past"] = {}
-            result["time_past"] = {
+            result["db_time_past"] = {}
+            result["db_time_past"] = {
                 "c_yr": [],
                 "365d": [],
                 "30d": [],
@@ -150,7 +150,7 @@ class DBReader:
                 )
                 + station_timeshift,
             }
-            result["time_range_past"] = {
+            result["db_time_range_past"] = {
                 "c_yr": [
                     utc_1_jan_year_date + station_timeshift,
                     utc_now_date + station_timeshift,
@@ -204,31 +204,31 @@ class DBReader:
 
                     # Store time in the result
                     if time_limit[time_depth]["value"] == 7:  # 5
-                        result["time_past"]["c_yr"].append(row_time)
+                        result["db_time_past"]["c_yr"].append(row_time)
                     if time_limit[time_depth]["value"] == 6:  # 4
-                        result["time_past"]["365d"].append(row_time)
+                        result["db_time_past"]["365d"].append(row_time)
                     if time_limit[time_depth]["value"] == 5:  # 3
-                        result["time_past"]["30d"].append(row_time)
+                        result["db_time_past"]["30d"].append(row_time)
                     if (
                         row.time >= utc_14d_before
                         and time_limit[time_depth]["value"] >= 4  # 2
                     ):
-                        result["time_past"]["14d"].append(row_time)
+                        result["db_time_past"]["14d"].append(row_time)
                     if (
                         row.time >= utc_7d_before
                         and time_limit[time_depth]["value"] >= 3  # 2
                     ):
-                        result["time_past"]["7d"].append(row_time)
+                        result["db_time_past"]["7d"].append(row_time)
                     if (
                         row.time >= utc_3d_before
                         and time_limit[time_depth]["value"] >= 2  # 2
                     ):
-                        result["time_past"]["3d"].append(row_time)
+                        result["db_time_past"]["3d"].append(row_time)
                     if (
                         row.time >= utc_1d_before
                         and time_limit[time_depth]["value"] >= 1  # 1
                     ):
-                        result["time_past"]["1d"].append(row_time)
+                        result["db_time_past"]["1d"].append(row_time)
 
                     for parameter in station["parameters"].values():
                         row_value = self._fix_value(
