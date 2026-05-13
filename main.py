@@ -52,6 +52,7 @@ def read_stations(stations_file: str) -> list:
                 "no_value": ws_parameters[f"E{par_row_id}"].value,
                 "min_value": ws_parameters[f"F{par_row_id}"].value,
                 "max_value": ws_parameters[f"G{par_row_id}"].value,
+                "om_parameter": ws_parameters[f"H{par_row_id}"].value,
             }
 
     stations = []
@@ -97,22 +98,30 @@ def main():
 
     parser.add_argument(
         "--mode",
-        help="Program mode (obs_plot | obs_forec_plot | forec_adj):\n\tobs_plot - observations only plot only;\n\tobs_forec_plot - observations and global forecasts plot only;\n\tforec_adj - get local forecasts and plot them and observations",
+        help="Program mode (obs_plot | forec_adj):\n\tobs_plot - observations only plot only;\n\tforec_adj - get local forecasts and plot them and observations",
         type=str,
-        choices=["obs_plot", "obs_forec_plot", "forec_adj"],
+        choices=["obs_plot", "forec_adj"],
         default="obs_plot",
     )
     parser.add_argument(
-        "--time-depth",
-        help="Time depth for observations and/or forecasts (1d, 7d, 30d, 365d, c_yr)",
+        "--add-globforecast-plot",
+        help="Should the program draw a global forecast? (no, yes)",
         type=str,
-        choices=["1d", "7d", "30d", "365d", "c_yr"],
+        choices=["no", "yes"],
+        default="no",
+    )
+    parser.add_argument(
+        "--time-depth",
+        help="Time depth for observations and/or forecasts (1d, 3d, 7d, 14d, 30d)",
+        type=str,
+        choices=["1d", "3d", "7d", "14d", "30d"],
         default="1d",
     )
     parser.add_argument(
         "--time-forecast",
-        help="Time forecast (0d, 1d, 2d, ..., 14d)",
+        help="Time forecast (0d, 1d, 3d, 7d, 14d)",
         type=str,
+        choices=["0d", "1d", "3d", "7d", "14d"],
         default="0d",
     )
     parser.add_argument(
@@ -203,18 +212,25 @@ def main():
                 logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
 
         # Удаление из рассмотрения станций, наблюдения для которых считать не удалось
-        if dell_stations:
-            for idx in sorted(dell_stations, reverse=True):
-                del stations[idx]
+        # if dell_stations:
+        for idx in sorted(dell_stations, reverse=True):
+            del stations[idx]
 
-    if mode in ["obs_forec_plot", "forec_adj"]:
+    if (mode == "forec_adj") or (args.add_globforecast_plot == "yes"):
         # ------------ Чтение глобальных прогнозов ------------
         om_reader = OMReader(url=om_config["url"], model=om_config["model"])
 
         if om_reader.connect():
             logging.info("Считываем глобальные прогнозы")
 
-        # ------------ Чтение глобальных прогнозов ------------
+            # ------------ Чтение глобальных прогнозов ------------
+            for station in stations:
+                station = om_reader.get_model_data(
+                    station=station,
+                    time_depth=time_depth,
+                    time_forecast=time_forecast,
+                    now_date=now_date,
+                )
 
         # ------------ Предобработка данных ------------
 
