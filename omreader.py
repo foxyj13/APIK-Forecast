@@ -1,11 +1,13 @@
 from copy import deepcopy
+from datetime import timedelta  # , date
 import logging
 
 import openmeteo_requests
 import pandas as pd
 import requests_cache
 from retry_requests import retry
-from timezonefinder import TimezoneFinder
+
+# from timezonefinder import TimezoneFinder
 
 
 class OMReader:
@@ -79,17 +81,8 @@ class OMReader:
             logging.error("Exception: %s", ex)
             return station
 
-        # разложить в словарь
-        for idx, db_par in enumerate(db_parameters_list):
-            station["parameters"][db_par]["om_data"] = {}
-            station["parameters"][db_par]["om_data"]["past"] = {}
-            station["parameters"][db_par]["om_data"]["past"][time_depth] = (
-                responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()  # type: ignore
-            )
-
         # Получение сетки по времени для past
-        station["om_time_past"] = {}
-        station["om_time_past"][time_depth] = (
+        om_time_past = (
             pd.date_range(
                 start=pd.to_datetime(responses[0].Hourly().Time(), unit="s", utc=True),
                 end=pd.to_datetime(responses[0].Hourly().TimeEnd(), unit="s", utc=True),
@@ -100,12 +93,40 @@ class OMReader:
             .tolist()
         )
 
+        # Вырезать интервал, соответстующий наблюдениям
+        try:
+            idx_start = om_time_past.index(station["db_time_past"][time_depth][0])
+        except ValueError:
+            logging.error(
+                "Ошибка получения начала интервала по времени для исторических прогнозов!"
+            )
+            return station
+
+        try:
+            idx_end = om_time_past.index(station["db_time_past"][time_depth][-1])
+        except ValueError:
+            logging.error(
+                "Ошибка получения конца интервала по времени для исторических прогнозов!"
+            )
+            return station
+
+        station["om_time_past"] = {}
+        station["om_time_past"][time_depth] = om_time_past[idx_start : idx_end + 1]
+
         # Запись границ сетки по времени
         station["om_time_range_past"] = {}
         station["om_time_range_past"][time_depth] = [
-            station["om_time_past"][time_depth][0],
-            station["om_time_past"][time_depth][-1],
+            om_time_past[idx_start],
+            om_time_past[idx_end],
         ]
+
+        # разложить в словарь значения параметров
+        for idx, db_par in enumerate(db_parameters_list):
+            station["parameters"][db_par]["om_data"] = {}
+            station["parameters"][db_par]["om_data"]["past"] = {}
+            station["parameters"][db_par]["om_data"]["past"][time_depth] = (
+                responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
+            )
 
         # 2) и отдельно для future: считать -> разложить в словарь station
         if int(time_forecast[:-1]) > 0:
@@ -123,16 +144,8 @@ class OMReader:
                 logging.error("Exception: %s", ex)
                 return station
 
-            # разложить в словарь
-            for idx, db_par in enumerate(db_parameters_list):
-                station["parameters"][db_par]["om_data"]["future"] = {}
-                station["parameters"][db_par]["om_data"]["future"][time_forecast] = (
-                    responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()  # type: ignore
-                )
-
             # Получение сетки по времени для future
-            station["om_time_future"] = {}
-            station["om_time_future"][time_forecast] = (
+            om_time_future = (
                 pd.date_range(
                     start=pd.to_datetime(
                         responses[0].Hourly().Time(), unit="s", utc=True  # type: ignore
@@ -147,12 +160,44 @@ class OMReader:
                 .tolist()
             )
 
+            # Вырезать интервал, соответстующий заданному периоду
+            try:
+                idx_start = om_time_future.index(station["db_time_past"]["recent"])
+            except ValueError:
+                logging.error(
+                    "Ошибка получения начала интервала по времени для прогноза вперед!"
+                )
+                return station
+
+            date_future_end = station["db_time_past"]["recent"] + timedelta(
+                days=int(time_forecast[:-1])
+            )
+            try:
+                idx_end = om_time_future.index(date_future_end)
+            except ValueError:
+                logging.error(
+                    "Ошибка получения конца интервала по времени для прогноза вперед!"
+                )
+                return station
+
+            station["om_time_future"] = {}
+            station["om_time_future"][time_forecast] = om_time_future[
+                idx_start : idx_end + 1
+            ]
+
             # Запись границ сетки по времени
             station["om_time_range_future"] = {}
             station["om_time_range_future"][time_forecast] = [
-                station["om_time_future"][time_forecast][0],
-                station["om_time_future"][time_forecast][-1],
+                om_time_future[idx_start],
+                om_time_future[idx_end],
             ]
+
+            # разложить в словарь значения параметров
+            for idx, db_par in enumerate(db_parameters_list):
+                station["parameters"][db_par]["om_data"]["future"] = {}
+                station["parameters"][db_par]["om_data"]["future"][time_forecast] = (
+                    responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
+                )
 
         # 3) и отдельно для current, чтобы выделить значение recent: считать -> разложить в словарь station
 
@@ -173,18 +218,18 @@ class OMReader:
         #     responses[0].Current().Time(), unit="s"  # , utc=True
         # ).to_pydatetime()
 
-        for db_par in db_parameters_list:
-            try:
-                idx = station["om_time_past"][time_depth].index(
-                    station["db_time_past"]["recent"]
-                )
-            except ValueError:
-                logging.error(
-                    "Ошибка получения значение параметра %s для текущего момента времени (recent)!",
-                    db_par,
-                )
-                return station
+        try:
+            idx = station["om_time_past"][time_depth].index(
+                station["db_time_past"]["recent"]
+            )
+        except ValueError:
+            logging.error(
+                "Ошибка получения значение параметра %s для текущего момента времени (recent)!",
+                db_par,
+            )
+            return station
 
+        for db_par in db_parameters_list:
             station["parameters"][db_par]["om_data"]["past"]["recent"] = station[
                 "parameters"
             ][db_par]["om_data"]["past"][time_depth][idx]
