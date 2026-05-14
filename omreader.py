@@ -199,25 +199,7 @@ class OMReader:
                     responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
                 )
 
-        # 3) и отдельно для current, чтобы выделить значение recent: считать -> разложить в словарь station
-
-        # request_params_current = deepcopy(request_params)
-        # request_params_current["current"] = om_parameters_list
-        # request_params_current["past_days"] = 0
-        # request_params_current["forecast_days"] = 0
-
-        # responses = self.openmeteo.weather_api(self.url, params=request_params_current)
-
-        # # разложить в словарь
-        # for idx, db_par in enumerate(db_parameters_list):
-        #     station["parameters"][db_par]["om_data"]["past"]["recent"] = (
-        #         responses[0].Current().Variables(idx).Value()
-        #     )
-
-        # station["om_time_past"]["recent"] = pd.to_datetime(
-        #     responses[0].Current().Time(), unit="s"  # , utc=True
-        # ).to_pydatetime()
-
+        # 3) и отдельно выделить значение recent (уже считаны) -> разложить в словарь station
         try:
             idx = station["om_time_past"][time_depth].index(
                 station["db_time_past"]["recent"]
