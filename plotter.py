@@ -162,7 +162,7 @@ class Plotter:
                 ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
             ax.grid(True)
             ax.grid(which="minor", linestyle=":")
-            plt.xlim(mdates.date2num(station["time_range"][time_scale]))
+            plt.xlim(mdates.date2num(station["db_time_range_past"][time_scale]))
 
             plt.figtext(
                 0.95,

@@ -22,7 +22,7 @@ class OMReader:
             # Setup the Open-Meteo API client with a cache and retry mechanism
             cache_session = requests_cache.CachedSession(".cache", expire_after=3600)
             retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-            self.openmeteo = openmeteo_requests.Client(session=retry_session)
+            self.openmeteo = openmeteo_requests.Client(session=retry_session)  # type: ignore
         except Exception as ex:
             logging.error("Ошибка подключения API клиента!")
             logging.error("Exception: %s", ex)
@@ -72,83 +72,123 @@ class OMReader:
         request_params_past["past_days"] = int(time_depth[:-1])
         request_params_past["forecast_days"] = 2
 
-        responses = self.openmeteo.weather_api(self.url, params=request_params_past)
+        try:
+            responses = self.openmeteo.weather_api(self.url, params=request_params_past)  # type: ignore
+        except Exception as ex:
+            logging.error("Ошибка получения данных для исторического периода!")
+            logging.error("Exception: %s", ex)
+            return station
 
         # разложить в словарь
         for idx, db_par in enumerate(db_parameters_list):
             station["parameters"][db_par]["om_data"] = {}
             station["parameters"][db_par]["om_data"]["past"] = {}
             station["parameters"][db_par]["om_data"]["past"][time_depth] = (
-                responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()
+                responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()  # type: ignore
             )
 
-        # Получить сетку по времени для past
+        # Получение сетки по времени для past
         station["om_time_past"] = {}
         station["om_time_past"][time_depth] = (
             pd.date_range(
-                start=pd.to_datetime(
-                    responses[0].Hourly().Time(), unit="s"
-                ),  # , utc=True
-                end=pd.to_datetime(
-                    responses[0].Hourly().TimeEnd(), unit="s"
-                ),  # , utc=True
+                start=pd.to_datetime(responses[0].Hourly().Time(), unit="s", utc=True),
+                end=pd.to_datetime(responses[0].Hourly().TimeEnd(), unit="s", utc=True),
                 freq=pd.Timedelta(seconds=responses[0].Hourly().Interval()),
                 inclusive="left",
             )
             .to_pydatetime()
             .tolist()
         )
+
+        # Запись границ сетки по времени
+        station["om_time_range_past"] = {}
+        station["om_time_range_past"][time_depth] = [
+            station["om_time_past"][time_depth][0],
+            station["om_time_past"][time_depth][-1],
+        ]
 
         # 2) и отдельно для future: считать -> разложить в словарь station
-        request_params_future = deepcopy(request_params)
-        request_params_future["hourly"] = om_parameters_list
-        request_params_future["past_days"] = 0
-        request_params_future["forecast_days"] = int(time_forecast[:-1]) + 2
+        if int(time_forecast[:-1]) > 0:
+            request_params_future = deepcopy(request_params)
+            request_params_future["hourly"] = om_parameters_list
+            request_params_future["past_days"] = 0
+            request_params_future["forecast_days"] = int(time_forecast[:-1]) + 2
 
-        responses = self.openmeteo.weather_api(self.url, params=request_params_future)
+            try:
+                responses = self.openmeteo.weather_api(  # type: ignore
+                    self.url, params=request_params_future
+                )
+            except Exception as ex:
+                logging.error("Ошибка получения данных для прогнозного периода!")
+                logging.error("Exception: %s", ex)
+                return station
 
-        # разложить в словарь
-        for idx, db_par in enumerate(db_parameters_list):
-            station["parameters"][db_par]["om_data"]["future"] = {}
-            station["parameters"][db_par]["om_data"]["future"][time_forecast] = (
-                responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()
+            # разложить в словарь
+            for idx, db_par in enumerate(db_parameters_list):
+                station["parameters"][db_par]["om_data"]["future"] = {}
+                station["parameters"][db_par]["om_data"]["future"][time_forecast] = (
+                    responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()  # type: ignore
+                )
+
+            # Получение сетки по времени для future
+            station["om_time_future"] = {}
+            station["om_time_future"][time_forecast] = (
+                pd.date_range(
+                    start=pd.to_datetime(
+                        responses[0].Hourly().Time(), unit="s", utc=True  # type: ignore
+                    ),
+                    end=pd.to_datetime(
+                        responses[0].Hourly().TimeEnd(), unit="s", utc=True  # type: ignore
+                    ),
+                    freq=pd.Timedelta(seconds=responses[0].Hourly().Interval()),  # type: ignore
+                    inclusive="left",
+                )
+                .to_pydatetime()
+                .tolist()
             )
 
-        # Получить сетку по времени для future
-        station["om_time_future"] = {}
-        station["om_time_future"][time_forecast] = (
-            pd.date_range(
-                start=pd.to_datetime(
-                    responses[0].Hourly().Time(), unit="s"
-                ),  # , utc=True
-                end=pd.to_datetime(
-                    responses[0].Hourly().TimeEnd(), unit="s"
-                ),  # , utc=True
-                freq=pd.Timedelta(seconds=responses[0].Hourly().Interval()),
-                inclusive="left",
-            )
-            .to_pydatetime()
-            .tolist()
-        )
+            # Запись границ сетки по времени
+            station["om_time_range_future"] = {}
+            station["om_time_range_future"][time_forecast] = [
+                station["om_time_future"][time_forecast][0],
+                station["om_time_future"][time_forecast][-1],
+            ]
 
         # 3) и отдельно для current, чтобы выделить значение recent: считать -> разложить в словарь station
-        request_params_current = deepcopy(request_params)
-        request_params_current["current"] = om_parameters_list
-        request_params_current["past_days"] = 0
-        request_params_current["forecast_days"] = 0
 
-        responses = self.openmeteo.weather_api(self.url, params=request_params_current)
+        # request_params_current = deepcopy(request_params)
+        # request_params_current["current"] = om_parameters_list
+        # request_params_current["past_days"] = 0
+        # request_params_current["forecast_days"] = 0
 
-        # разложить в словарь
-        for idx, db_par in enumerate(db_parameters_list):
-            station["parameters"][db_par]["om_data"]["past"]["recent"] = (
-                responses[0].Current().Variables(idx).Value()
-            )
+        # responses = self.openmeteo.weather_api(self.url, params=request_params_current)
 
-        station["om_time_past"]["recent"] = pd.to_datetime(
-            responses[0].Current().Time(), unit="s"  # , utc=True
-        ).to_pydatetime()
+        # # разложить в словарь
+        # for idx, db_par in enumerate(db_parameters_list):
+        #     station["parameters"][db_par]["om_data"]["past"]["recent"] = (
+        #         responses[0].Current().Variables(idx).Value()
+        #     )
 
-        # 5) Сформировать пределы сетки по времени (time_range_future)
+        # station["om_time_past"]["recent"] = pd.to_datetime(
+        #     responses[0].Current().Time(), unit="s"  # , utc=True
+        # ).to_pydatetime()
+
+        for db_par in db_parameters_list:
+            try:
+                idx = station["om_time_past"][time_depth].index(
+                    station["db_time_past"]["recent"]
+                )
+            except ValueError:
+                logging.error(
+                    "Ошибка получения значение параметра %s для текущего момента времени (recent)!",
+                    db_par,
+                )
+                return station
+
+            station["parameters"][db_par]["om_data"]["past"]["recent"] = station[
+                "parameters"
+            ][db_par]["om_data"]["past"][time_depth][idx]
+
+        station["om_time_past"]["recent"] = station["db_time_past"]["recent"]
 
         return station
