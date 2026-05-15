@@ -231,6 +231,7 @@ def main():
                     time_forecast=time_forecast,
                     now_date=now_date,
                 )
+                ...
 
             # ------------ Расчет метрики качества глобальных прогнозов ------------
             ...
@@ -257,7 +258,28 @@ def main():
                     ...
             else:
                 # Отрисовка наблюдения + глобальный (сырой) прогноз
-                ...
+                logging.info(
+                    "Строим статичные графики: наблюдения + глобальный (сырой) прогноз"
+                )
+
+                plotter = Plotter(dict(main_config), glob_forecast=True)
+
+                if stations:
+                    for station in stations:
+                        plotter.make_table_forecast(station=station)
+                        # plotter.make_plots_forecast(
+                        #     station=station,
+                        #     time_depth=time_depth,
+                        #     time_forecast=time_forecast,
+                        # )
+
+                        # # Экспорт в CSV (если включен в congig.ini)
+                        # #   Проверка на включенность опции внутри самой функции export_to_csv
+                        # plotter.export_to_csv_forecast(
+                        #     station=station,
+                        #     time_depth=time_depth,
+                        #     time_forecast=time_forecast,
+                        # )
 
         else:
             logging.error("Не удалось получить глобальные прогнозы!")

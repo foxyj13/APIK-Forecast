@@ -8,11 +8,13 @@ import csv
 
 
 class Plotter:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, glob_forecast=False, local_forecast=False):
         self._config = config
         self.export_enabled = config.get("export-enable", "false").lower() == "true"
         # self.export_enabled = config.getboolean("export-enable")
         # self.export_folder = config.get('csv-folder')
+        self.glob_forecast = glob_forecast
+        self.local_forecast = local_forecast
 
     def export_to_csv(self, station: dict, time_depth: str):
 
@@ -47,7 +49,7 @@ class Plotter:
                 writer.writerow(headers)
 
                 # Данные
-                for i, timestamp in enumerate(station["time"]["c_yr"]):
+                for i, timestamp in enumerate(station["db_time_past"]["c_yr"]):
                     row = [timestamp.strftime("%Y-%m-%d %H:%M")]
 
                     for param_name in param_names:
@@ -67,7 +69,7 @@ class Plotter:
         out_filename = f"{station['code']}_{self._config['recent-table-suffix']}.png"
         out_filename = os.path.join(self._config["images-folder"], out_filename)
 
-        timestamp = station["time"]["recent"].strftime("%d.%m.%Y %H:%M")
+        timestamp = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
         data = []  # Data to plot as a table
         for name, parameter in station["parameters"].items():
             value = (
@@ -122,12 +124,114 @@ class Plotter:
         )
         plt.close(fig)
 
+    def make_table_forecast(self, station: dict):
+        logging.info(
+            "Строю табличку текущих наблюдений для станции %s", station["code"]
+        )
+        if self.local_forecast:
+            logging.info("Добавляю значения локального (уточненного) прогноза")
+        if self.glob_forecast:
+            logging.info("Добавляю значения глобального (сырого) прогноза")
+
+        title_text = station["full_name"]
+        fig_border = "steelblue"
+        out_filename = f"{station['code']}_{self._config['recent-table-suffix']}.png"
+        out_filename = os.path.join(self._config["images-folder"], out_filename)
+
+        timestamp = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
+
+        data = []  # Data to plot as a table
+        column_headers = ["Наблюдения"]
+        for name, parameter in station["parameters"].items():
+            row_val = [parameter["full_name"]]
+            value_obs = (
+                f"{float(parameter['data']['recent']):1.1f}"
+                if parameter["data"]["recent"] is not None
+                else "-"
+            )
+            row_val.append(value_obs)
+
+            if self.local_forecast:
+                value_fc_local = (
+                    f"{float(parameter['om_data_local']['past']['recent']):1.1f}"
+                    if parameter["om_parameter"]
+                    and parameter["om_data_local"]["past"]["recent"] is not None
+                    else "-"
+                )
+                row_val.append(value_fc_local)
+                column_headers.append("Лок. прогноз")
+
+            if self.glob_forecast:
+                value_fc_glob = (
+                    f"{float(parameter['om_data_glob']['past']['recent']):1.1f}"
+                    if parameter["om_parameter"]
+                    and parameter["om_data_glob"]["past"]["recent"] is not None
+                    else "-"
+                )
+                row_val.append(value_fc_glob)
+                column_headers.append("Глоб. прогноз")
+
+            # data.append([parameter["full_name"], value_obs])
+            data.append(row_val)
+
+        # Get row headers from the data array
+        row_headers = [x[0] for x in data]
+
+        # Format the data
+        cell_text = []
+        for row in data:
+            cell_text.append([x for x in row[1:]])
+        # Get some lists of color specs for row and column headers
+        # Create the figure.
+        plt.figure(
+            linewidth=2,
+            edgecolor=fig_border,
+            tight_layout={"pad": 0.3},
+            figsize=(
+                len(data[0]) + 3.5,
+                max([(len(data) + 1) * 0.35, 1.1]),
+            ),  # Complex formula to get figure size
+        )
+        # Add a table at the bottom of the axes
+        the_table = plt.table(
+            cellText=cell_text,
+            rowLabels=row_headers,
+            rowLoc="left",
+            colLabels=column_headers,
+            colLoc="center",
+            loc="lower center",
+        )
+        # Make the rows taller (i.e., make cell y scale larger).
+        the_table.scale(1, 1.5)
+        # Hide axes
+        ax = plt.gca()
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        # Hide axes border
+        plt.box(on=None)
+        # Add title
+        plt.suptitle(
+            "$\\bf{" + title_text.replace(" ", "\ ") + "}$\n" + timestamp, va="top"
+        )
+        # Add footer
+        # Without plt.draw() here, the title will center on the axes and not the figure.
+        plt.draw()
+        # Create image. plt.savefig ignores figure edge and face colors, so map them.
+        fig = plt.gcf()
+        plt.savefig(
+            out_filename,
+            edgecolor=fig.get_edgecolor(),
+            facecolor=fig.get_facecolor(),
+            dpi=150,
+        )
+        plt.close(fig)
+
     def _make_plot(self, station: dict, time_scale: str):
-        footer_text = station["time"]["recent"].strftime("%d.%m.%Y %H:%M")
+        footer_text = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
 
         for _, parameter in station["parameters"].items():
             plt.figure(figsize=(6.4, 4.8 - 0.8))
-            x = station["time"][time_scale]
+            x = station["db_time_past"][time_scale]
             y = parameter["data"][time_scale]
             plt.plot(x, y)
             ax = plt.gca()

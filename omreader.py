@@ -122,9 +122,9 @@ class OMReader:
 
         # разложить в словарь значения параметров
         for idx, db_par in enumerate(db_parameters_list):
-            station["parameters"][db_par]["om_data"] = {}
-            station["parameters"][db_par]["om_data"]["past"] = {}
-            station["parameters"][db_par]["om_data"]["past"][time_depth] = (
+            station["parameters"][db_par]["om_data_glob"] = {}
+            station["parameters"][db_par]["om_data_glob"]["past"] = {}
+            station["parameters"][db_par]["om_data_glob"]["past"][time_depth] = (
                 responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
             )
 
@@ -194,8 +194,10 @@ class OMReader:
 
             # разложить в словарь значения параметров
             for idx, db_par in enumerate(db_parameters_list):
-                station["parameters"][db_par]["om_data"]["future"] = {}
-                station["parameters"][db_par]["om_data"]["future"][time_forecast] = (
+                station["parameters"][db_par]["om_data_glob"]["future"] = {}
+                station["parameters"][db_par]["om_data_glob"]["future"][
+                    time_forecast
+                ] = (
                     responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
                 )
 
@@ -212,9 +214,9 @@ class OMReader:
             return station
 
         for db_par in db_parameters_list:
-            station["parameters"][db_par]["om_data"]["past"]["recent"] = station[
+            station["parameters"][db_par]["om_data_glob"]["past"]["recent"] = station[
                 "parameters"
-            ][db_par]["om_data"]["past"][time_depth][idx]
+            ][db_par]["om_data_glob"]["past"][time_depth][idx]
 
         station["om_time_past"]["recent"] = station["db_time_past"]["recent"]
 
