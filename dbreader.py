@@ -136,6 +136,9 @@ class DBReader:
 
             # Prepare
             station_timeshift = datetime.timedelta(hours=rows[0].timezone)
+
+            result["station_timeshift"] = station_timeshift
+            
             result["db_time_past"] = {}
             result["db_time_past"] = {
                 "c_yr": [],
