@@ -91,7 +91,8 @@ class OMReader:
             )
             .to_pydatetime()
             .tolist()
-        )
+        ) 
+        om_time_past[:] = [val + station["station_timeshift"] for val in om_time_past]        
 
         # Вырезать интервал, соответстующий наблюдениям
         try:
@@ -159,6 +160,7 @@ class OMReader:
                 .to_pydatetime()
                 .tolist()
             )
+            om_time_future[:] = [val + station["station_timeshift"] for val in om_time_future]
 
             # Вырезать интервал, соответстующий заданному периоду
             try:
