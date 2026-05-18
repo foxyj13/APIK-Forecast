@@ -64,6 +64,9 @@ class Plotter:
 
     def make_table(self, station: dict):
         logging.info(f"Строю табличку текущих наблюдений для станции {station['code']}")
+
+        plt.ioff()
+
         title_text = station["full_name"]
         fig_border = "steelblue"
         out_filename = f"{station['code']}_{self._config['recent-table-suffix']}.png"
@@ -132,6 +135,8 @@ class Plotter:
             logging.info("Добавляю значения локального (уточненного) прогноза")
         if self.glob_forecast:
             logging.info("Добавляю значения глобального (сырого) прогноза")
+
+        plt.ioff()
 
         title_text = station["full_name"]
         fig_border = "steelblue"
@@ -227,6 +232,8 @@ class Plotter:
         plt.close(fig)
 
     def _make_plot(self, station: dict, time_scale: str):
+        plt.ioff() # Отключение интерактивного режима (чтобы окна при работе не мелькали)
+
         footer_text = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
 
         for _, parameter in station["parameters"].items():
@@ -253,13 +260,17 @@ class Plotter:
                 ax.xaxis.set_minor_locator(mdates.DayLocator())
                 ax.xaxis.set_major_formatter(mdates.DateFormatter("%b-%d"))
             if time_scale == "14d":
-                pass
+                ax.xaxis.set_major_locator(mdates.HourLocator(interval=48))
+                ax.xaxis.set_minor_locator(mdates.HourLocator(interval=12))
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%b-%d"))
             if time_scale == "7d":
                 ax.xaxis.set_major_locator(mdates.HourLocator(interval=24))
                 ax.xaxis.set_minor_locator(mdates.HourLocator(interval=6))
                 ax.xaxis.set_major_formatter(mdates.DateFormatter("%b-%d"))
             if time_scale == "3d":
-                pass
+                ax.xaxis.set_major_locator(mdates.HourLocator(interval=24))
+                ax.xaxis.set_minor_locator(mdates.HourLocator(interval=6))
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%b-%d %H:%M"))
             if time_scale == "1d":
                 ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))
                 ax.xaxis.set_minor_locator(mdates.HourLocator())
