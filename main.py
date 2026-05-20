@@ -14,6 +14,7 @@ from plotter import Plotter
 from plotter_js import PlotterJS
 from dbreader import DBReader
 from omreader import OMReader
+from validator import Validator
 
 
 def init_logging(config):
@@ -231,10 +232,6 @@ def main():
                     time_forecast=time_forecast,
                     now_date=now_date,
                 )
-                ...
-
-            # ------------ Расчет метрики качества глобальных прогнозов ------------
-            ...
 
             # ------------ Если прогноз нужно корректировать ------------
             if mode == "forec_adj":
@@ -244,9 +241,6 @@ def main():
                 ...
 
                 # ------------ Корректировка глобальных прогнозов (ML-блок) (локальные прогнозы) ------------
-                ...
-
-                # ------------ Расчет метрики качества локальных (скорректированных) прогнозов ------------
                 ...
 
                 # ------------ Вывод результата: отрисовка, экспорт, html ------------
@@ -282,6 +276,12 @@ def main():
                         #     time_depth=time_depth,
                         #     time_forecast=time_forecast,
                         # )
+
+            # ------------ Расчет метрик ------------
+            validator = Validator(time_depth=time_depth, time_forecast=time_forecast)
+            logging.info("Рассчитываем метрики по имеющимся данным")
+            for station in stations:
+                station = validator.get_metrics(station)
 
         else:
             logging.error("Не удалось получить глобальные прогнозы!")

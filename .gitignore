@@ -33,3 +33,4 @@ log/
 run/
 web/
 requirements_*.txt
+*.ipynb
