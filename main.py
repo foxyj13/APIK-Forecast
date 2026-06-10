@@ -15,6 +15,7 @@ from plotter_js import PlotterJS
 from dbreader import DBReader
 from omreader import OMReader
 from validator import Validator
+from adjustmenter import Adjustmenter
 
 
 def init_logging(config):
@@ -151,15 +152,16 @@ def main():
     time_forecast = args.time_forecast
     now_date = args.now_date
 
+    # -- (!!!) Перенести следующие 2 проверки в логирование
     if (args.mode == "forec_adj") and (time_forecast == "0d"):
         print(
-            "Program arguments ERROR: for --mode=forec_adj value for --time-forecast must be > 0d"
+            "Program arguments ERROR: for --mode=forec_adj value for --time-forecast must be GREATER then 0d"
         )
         sys.exit(1)
 
     if (args.qc_gen == "yes") and (now_date == now):
         print(
-            "Program arguments ERROR: for --qc-gen=yes value for --now_date must be < today date"
+            "Program arguments ERROR: for --qc-gen=yes value for --now_date must be LESS then today date"
         )
         sys.exit(1)
 
@@ -184,12 +186,40 @@ def main():
     if not os.path.exists(main_config["csv-folder"]):
         os.mkdir(main_config["csv-folder"])
 
+    if not os.path.exists(main_config["ml-verbose-folder"]):
+        os.mkdir(main_config["ml-verbose-folder"])
+
     if args.qc_gen == "yes":
         main_config["export_enable"] = "True"
 
     init_logging(config)
 
     logging.info("Начинаем работу!")
+
+    logging.info("Проверка наличия config_ml.ini")
+    if (not os.path.exists(main_config["ml-config-file"])) and (mode == "forec_adj"):
+        logging.error(
+            "Файл %s отсутствует. Невозможно продолжать работу в режиме корректировка прогнозов (mode = %s)",
+            main_config["ml-config-file"],
+            mode,
+        )
+        logging.info("Остановка программы")
+        sys.exit(1)
+
+    if mode == "forec_adj":
+        logging.info("Считывание информации из %s", main_config["ml-config-file"])
+        config_ml = ConfigParser()
+        config_ml.read(
+            os.path.join(str(os.path.dirname(__file__)), main_config["ml-config-file"]),
+            encoding="utf8",
+        )
+        if not config_ml:
+            logging.error(
+                "Не удалось прочитать файл %s. Проверьте формат и структуру файла",
+                main_config["ml-config-file"],
+            )
+            logging.info("Остановка программы")
+            sys.exit(1)
 
     # Чтение перечня станций и перечня параметров для каждой станции
     stations = read_stations(main_config["stations-file"])
@@ -235,13 +265,23 @@ def main():
 
             # ------------ Если прогноз нужно корректировать ------------
             if mode == "forec_adj":
-                # ------------ Формирование обучающей выборки ------------
-                # Для каждой станции:
-                #   - оставить внутри интервала прогноза только те моменты времени, что есть в наблюдениях
-                ...
+                logging.info("Формируем локальные прогнозы")
 
-                # ------------ Корректировка глобальных прогнозов (ML-блок) (локальные прогнозы) ------------
-                ...
+                ml_adjust = Adjustmenter(
+                    config=config_ml,
+                    now_date=now_date,
+                    time_depth=time_depth,
+                    time_forecast=time_forecast,
+                    verbose=main_config["ml-verbose"],
+                    verbose_dir=main_config["ml-verbose-folder"],
+                )
+
+                for station in stations:
+                    # ------------ Корректировка глобальных прогнозов (ML-блок) (локальные прогнозы) ------------
+                    # Формирование обучающей выборки осуществляется внутри функции
+                    # Для каждой станции:
+                    #   - оставить внутри интервала прогноза только те моменты времени, что есть в наблюдениях
+                    station = ml_adjust.get_local_forecast(station)
 
                 # ------------ Вывод результата: отрисовка, экспорт, html ------------
                 if args.add_globforecast_plot == "yes":
