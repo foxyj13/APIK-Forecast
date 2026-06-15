@@ -152,19 +152,6 @@ def main():
     time_forecast = args.time_forecast
     now_date = args.now_date
 
-    # -- (!!!) Перенести следующие 2 проверки в логирование
-    if (args.mode == "forec_adj") and (time_forecast == "0d"):
-        print(
-            "Program arguments ERROR: for --mode=forec_adj value for --time-forecast must be GREATER then 0d"
-        )
-        sys.exit(1)
-
-    if (args.qc_gen == "yes") and (now_date == now):
-        print(
-            "Program arguments ERROR: for --qc-gen=yes value for --now_date must be LESS then today date"
-        )
-        sys.exit(1)
-
     # ------------ Чтение конфигурационного файла .ini (args.config) ------------
     config = ConfigParser()
     config.read(
@@ -196,17 +183,32 @@ def main():
 
     logging.info("Начинаем работу!")
 
-    logging.info("Проверка наличия config_ml.ini")
-    if (not os.path.exists(main_config["ml-config-file"])) and (mode == "forec_adj"):
+    logging.info("Проверка сочетания значений входных ключей программы")
+    if (args.mode == "forec_adj") and (time_forecast == "0d"):
         logging.error(
-            "Файл %s отсутствует. Невозможно продолжать работу в режиме корректировка прогнозов (mode = %s)",
-            main_config["ml-config-file"],
-            mode,
+            "Ошибка сочетания значений входных ключей программы: при --mode=forec_adj значение для --time-forecast должно быть БОЛЬШЕ 0d"
+        )
+        logging.info("Остановка программы")
+        sys.exit(1)
+
+    if (args.qc_gen == "yes") and (now_date == now):
+        logging.error(
+            "Ошибка сочетания значений входных ключей программы: при --qc-gen=yes значение для --now_date должно быть МЕНЬШЕ текущей даты"
         )
         logging.info("Остановка программы")
         sys.exit(1)
 
     if mode == "forec_adj":
+        logging.info("Проверка наличия config_ml.ini")
+        if not os.path.exists(main_config["ml-config-file"]):
+            logging.error(
+                "Файл %s отсутствует. Невозможно продолжать работу в режиме корректировка прогнозов (mode = %s)",
+                main_config["ml-config-file"],
+                mode,
+            )
+            logging.info("Остановка программы")
+            sys.exit(1)
+
         logging.info("Считывание информации из %s", main_config["ml-config-file"])
         config_ml = ConfigParser()
         config_ml.read(
@@ -286,10 +288,22 @@ def main():
                 # ------------ Вывод результата: отрисовка, экспорт, html ------------
                 if args.add_globforecast_plot == "yes":
                     # Отрисовка наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз
-                    ...
+                    logging.info(
+                        "Строим статичные графики: наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз"
+                    )
+
+                    plotter = Plotter(
+                        dict(main_config), glob_forecast=True, local_forecast=True
+                    )
                 else:
                     # Отрисовка наблюдения + локальный (уточненный) прогноз
-                    ...
+                    logging.info(
+                        "Строим статичные графики: наблюдения + локальный (уточненный) прогноз"
+                    )
+
+                    plotter = Plotter(
+                        dict(main_config), glob_forecast=False, local_forecast=True
+                    )
             else:
                 # Отрисовка наблюдения + глобальный (сырой) прогноз
                 logging.info(
@@ -300,22 +314,21 @@ def main():
                     dict(main_config), glob_forecast=True, local_forecast=False
                 )
 
-                if stations:
-                    for station in stations:
-                        plotter.make_table_forecast(station=station)
-                        plotter.make_plots_forecast(
-                            station=station,
-                            time_depth=time_depth,
-                            time_forecast=time_forecast,
-                        )
+            for station in stations:
+                plotter.make_table_forecast(station=station)
+                plotter.make_plots_forecast(
+                    station=station,
+                    time_depth=time_depth,
+                    time_forecast=time_forecast,
+                )
 
-                        # # Экспорт в CSV (если включен в congig.ini)
-                        # #   Проверка на включенность опции внутри самой функции export_to_csv
-                        # plotter.export_to_csv_forecast(
-                        #     station=station,
-                        #     time_depth=time_depth,
-                        #     time_forecast=time_forecast,
-                        # )
+                # # Экспорт в CSV (если включен в congig.ini)
+                # #   Проверка на включенность опции внутри самой функции export_to_csv
+                # plotter.export_to_csv_forecast(
+                #     station=station,
+                #     time_depth=time_depth,
+                #     time_forecast=time_forecast,
+                # )
 
             # ------------ Расчет метрик ------------
             validator = Validator(time_depth=time_depth, time_forecast=time_forecast)
