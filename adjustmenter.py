@@ -15,7 +15,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from lightgbm import LGBMRegressor
 from xgboost import XGBRegressor
 
-
+from sklearn.metrics import r2_score
 from sklearn.model_selection import GridSearchCV
 
 
@@ -46,8 +46,6 @@ class Adjustmenter:
             self.ml_models_list,
         )
 
-        # self.config = config
-        # self.cfg_sections = self.config.sections()
         self.config = self._check_config_models(config)
         if not self.config:
             logging.error(
@@ -439,50 +437,106 @@ class Adjustmenter:
                         "Использование стандартных гиперпараметров для модели машинного обучения"
                     )
 
-        for model_name in model_set:
+        result_predict = {}
+        for model_idx, model_name in enumerate(model_set):
             logging.info(
                 "Построение прогноза с помощью модели машинного обучения %s",
                 model_name,
             )
 
-            model_cls = self.ml_models[model_name]["cls"]
+            try:
+                model_cls = self.ml_models[model_name]["cls"]
 
-            if model_cfg["grid-search"]:
-                param_grid = self.ml_models[model_name]["param_grid"]
+                if model_cfg["grid-search"]:
+                    param_grid = self.ml_models[model_name]["param_grid"]
 
-                model = GridSearchCV(model_cls(), param_grid, cv=5)
-                model.fit(np.array(x_train).reshape(-1, 1), y_train)
+                    model = GridSearchCV(model_cls(), param_grid, cv=5)
+                    model.fit(np.array(x_train).reshape(-1, 1), y_train)
 
-                # later out model.best_params_ to log and verbose-file
-                # r2_score(y_train, y_test)
-                # y_test = model.best_estimator_.predict(
-                #     np.array(x_train).reshape(-1, 1)
-                # )
+                    # later out model.best_params_ to log and verbose-file
+                    y_test = model.best_estimator_.predict(
+                        np.array(x_train).reshape(-1, 1)
+                    )
+                    result_predict[model_idx]["r2_score"] = r2_score(y_train, y_test)
 
-                y_past_predict = model.best_estimator_.predict(
-                    np.array(x_past_predict).reshape(-1, 1)
-                )
-                y_future_predict = model.best_estimator_.predict(
-                    np.array(x_future_predict).reshape(-1, 1)
-                )
-            else:
-                if model_params_user:
-                    model = model_cls(**model_params_user)
+                    result_predict[model_idx]["y_past_predict"] = (
+                        model.best_estimator_.predict(
+                            np.array(x_past_predict).reshape(-1, 1)
+                        )
+                    )
+                    result_predict[model_idx]["y_future_predict"] = (
+                        model.best_estimator_.predict(
+                            np.array(x_future_predict).reshape(-1, 1)
+                        )
+                    )
                 else:
-                    model = model_cls()
+                    if model_params_user:
+                        model = model_cls(**model_params_user)
+                    else:
+                        model = model_cls()
 
-                model.fit(np.array(x_train).reshape(-1, 1), y_train)
+                    model.fit(np.array(x_train).reshape(-1, 1), y_train)
 
-                # later out model.params_ to log and verbose-file
-                # r2_score(y_train, y_test)
-                # y_test = model.best_estimator_.predict(
-                #     np.array(x_train).reshape(-1, 1)
-                # )
+                    # later out model.params_ to log and verbose-file
+                    y_test = model.predict(np.array(x_train).reshape(-1, 1))
+                    result_predict[model_idx]["r2_score"] = r2_score(y_train, y_test)
 
-                y_past_predict = model.predict(np.array(x_past_predict).reshape(-1, 1))
-                y_future_predict = model.predict(
-                    np.array(x_future_predict).reshape(-1, 1)
+                    result_predict[model_idx]["y_past_predict"] = model.predict(
+                        np.array(x_past_predict).reshape(-1, 1)
+                    )
+                    result_predict[model_idx]["y_future_predict"] = model.predict(
+                        np.array(x_future_predict).reshape(-1, 1)
+                    )
+            except Exception as e:
+                logging.error(
+                    "Ошибка при построении прогноза с помощью модели машинного обучения %s: %s",
+                    model_name,
+                    str(e),
                 )
+                logging.info("Переход к следующей модели (если есть)")
+                continue
+        
+        if result_predict:
+            if len(model_set) == 1:
+                y_past_predict = result_predict[0]["y_past_predict"]
+                y_future_predict = result_predict[0]["y_future_predict"]
+            else:
+                if model_cfg["get-result"] == "best":
+                    best_model_idx = max(
+                        result_predict, key=lambda idx: result_predict[idx]["r2_score"]
+                    )
+                    y_past_predict = result_predict[best_model_idx]["y_past_predict"]
+                    y_future_predict = result_predict[best_model_idx][
+                        "y_future_predict"
+                    ]
+                elif model_cfg["get-result"] == "mean":
+                    y_past_predict = np.mean(
+                        [
+                            result_predict[idx]["y_past_predict"]
+                            for idx in result_predict
+                        ],
+                        axis=0,
+                    )
+                    y_future_predict = np.mean(
+                        [
+                            result_predict[idx]["y_future_predict"]
+                            for idx in result_predict
+                        ],
+                        axis=0,
+                    )
+                else:
+                    logging.error(
+                        "Недопустимое значение для ключа 'get-result' в ML-конфигурации: %s. Допустимые значения: 'best', 'mean'",
+                        model_cfg["get-result"],
+                    )
+                    logging.info("Остановка программы")
+                    sys.exit(1)
+        else:
+            logging.error(
+                "Не удалось построить прогноз ни с одной из моделей машинного обучения. Будет возвращен прогноз без коррекции (т.е. глобальный прогноз)."
+            )
+            y_past_predict = x_past_predict
+            y_future_predict = x_future_predict
 
         return list(y_past_predict), list(y_future_predict)
 
