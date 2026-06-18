@@ -14,6 +14,11 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import GradientBoostingRegressor
 from lightgbm import LGBMRegressor
 from xgboost import XGBRegressor
+from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.holtwinters import Holt
+from baselinmodels import BiasModel
+from baselinmodels import ScalingModel
 
 from sklearn.metrics import r2_score
 from sklearn.model_selection import GridSearchCV
@@ -73,62 +78,62 @@ class Adjustmenter:
             "positive": [True, False],
         }
 
-        # ml_models["Ridge"] = {}
-        # ml_models["Ridge"]["cls"] = Ridge
-        # ml_models["Ridge"]["param_grid"] = {
-        #     # Сила регуляризации: от очень слабой (0.01) до экстремально сильной (1000)
-        #     "alpha": np.logspace(
-        #         -3, 3, 7
-        #     ),  # [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
-        #     # Расчет свободного коэффициента
-        #     "fit_intercept": [True, False],
-        #     # Алгоритм решения оптимизационной задачи.
-        #     # 'auto' выберет лучший метод сам, но можно протестировать конкретные:
-        #     # 'cholesky' хорош для плотных матриц, 'sag'/'saga' — для больших датасетов
-        #     "solver": ["auto", "cholesky", "svd", "sag"],
-        # }  # Для подбора alpha лучше использовать RidgeCV вместо стандартного GridSearchCV
+        ml_models["Ridge"] = {}
+        ml_models["Ridge"]["cls"] = Ridge
+        ml_models["Ridge"]["param_grid"] = {
+            # Сила регуляризации: от очень слабой (0.01) до экстремально сильной (1000)
+            "alpha": np.logspace(
+                -3, 3, 7
+            ),  # [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+            # Расчет свободного коэффициента
+            "fit_intercept": [True, False],
+            # Алгоритм решения оптимизационной задачи.
+            # 'auto' выберет лучший метод сам, но можно протестировать конкретные:
+            # 'cholesky' хорош для плотных матриц, 'sag'/'saga' — для больших датасетов
+            "solver": ["auto", "cholesky", "svd", "sag"],
+        }  # Для подбора alpha лучше использовать RidgeCV вместо стандартного GridSearchCV
 
-        # ml_models["Lasso"] = {}
-        # ml_models["Lasso"]["cls"] = Lasso
-        # ml_models["Lasso"]["param_grid"] = {
-        #     # Коэффициент силы регуляризации (от слабой к сильной)
-        #     "alpha": np.logspace(
-        #         -4, 2, 7
-        #     ),  # [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
-        #     # Нужно ли рассчитывать свободный коэффициент
-        #     "fit_intercept": [True, False],
-        #     # Максимальное число итераций (для Lasso важно, так как оно сходится дольше)
-        #     "max_iter": [1000, 5000],
-        # }  # Для подбора alpha лучше использовать LassoCV вместо стандартного GridSearchCV
+        ml_models["Lasso"] = {}
+        ml_models["Lasso"]["cls"] = Lasso
+        ml_models["Lasso"]["param_grid"] = {
+            # Коэффициент силы регуляризации (от слабой к сильной)
+            "alpha": np.logspace(
+                -4, 2, 7
+            ),  # [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+            # Нужно ли рассчитывать свободный коэффициент
+            "fit_intercept": [True, False],
+            # Максимальное число итераций (для Lasso важно, так как оно сходится дольше)
+            "max_iter": [1000, 5000],
+        }  # Для подбора alpha лучше использовать LassoCV вместо стандартного GridSearchCV
 
-        # ml_models["ElasticNet"] = {}
-        # ml_models["ElasticNet"]["cls"] = ElasticNet
-        # ml_models["ElasticNet"]["param_grid"] = {
-        #     # Общая сила штрафа
-        #     "alpha": np.logspace(
-        #         -4, 2, 7
-        #     ),  # [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
-        #     # Доля L1 (Lasso) штрафа.
-        #     # При 0.0 — это чистый Ridge, при 1.0 — чистый Lasso.
-        #     "l1_ratio": [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99],
-        #     # Нужно ли рассчитывать свободный коэффициент
-        #     "fit_intercept": [True, False],
-        #     # Максимальное число итераци
-        #     "max_iter": [1000, 5000],
-        # }
+        ml_models["ElasticNet"] = {}
+        ml_models["ElasticNet"]["cls"] = ElasticNet
+        ml_models["ElasticNet"]["param_grid"] = {
+            # Общая сила штрафа
+            "alpha": np.logspace(
+                -4, 2, 7
+            ),  # [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+            # Доля L1 (Lasso) штрафа.
+            # При 0.0 — это чистый Ridge, при 1.0 — чистый Lasso.
+            "l1_ratio": [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99],
+            # Нужно ли рассчитывать свободный коэффициент
+            "fit_intercept": [True, False],
+            # Максимальное число итераци
+            "max_iter": [1000, 5000],
+        }
 
-        # ml_models["KNeighborsRegressor"] = {}
-        # ml_models["KNeighborsRegressor"]["cls"] = KNeighborsRegressor
-        # ml_models["KNeighborsRegressor"]["param_grid"] = {
-        #     # Количество соседей
-        #     "n_neighbors": [5, 7, 10, 13, 15],
-        #     # Весовая функция
-        #     "weights": ["uniform", "distance"],
-        #     # Метрика расстояния
-        #     "metric": ["euclidean", "manhattan", "minkowski"],
-        #     # Степенной параметр для метрики Минковского
-        #     "p": [1, 2],
-        # }
+        ml_models["KNeighborsRegressor"] = {}
+        ml_models["KNeighborsRegressor"]["cls"] = KNeighborsRegressor
+        ml_models["KNeighborsRegressor"]["param_grid"] = {
+            # Количество соседей
+            "n_neighbors": [5, 7, 10, 13, 15],
+            # Весовая функция
+            "weights": ["uniform", "distance"],
+            # Метрика расстояния
+            "metric": ["euclidean", "manhattan", "minkowski"],
+            # Степенной параметр для метрики Минковского
+            "p": [1, 2],
+        }
 
         ml_models["DecisionTreeRegressor"] = {}
         ml_models["DecisionTreeRegressor"]["cls"] = DecisionTreeRegressor
@@ -152,62 +157,112 @@ class Adjustmenter:
             "max_features": [None, "auto", "sqrt", "log2"],
         }
 
-        # ml_models["GradientBoostingRegressor"] = {}
-        # ml_models["GradientBoostingRegressor"]["cls"] = GradientBoostingRegressor
-        # ml_models["GradientBoostingRegressor"]["param_grid"] = {
-        #     # Количество деревьев
-        #     "n_estimators": [10, 50, 100, 200, 500],
-        #     # Скорость обучения
-        #     "learning_rate": [0.01, 0.05, 0.1, 0.2],
-        #     # Максимальная глубина каждого дерева
-        #     "max_depth": [None, 2, 5, 10],
-        #     # Доля выборки для обучения одного дерева
-        #     "subsample": [0.7, 0.8, 0.9, 1.0],
-        #     # Ограничение признаков
-        #     "max_features": [None, "sqrt", 0.8],
+        ml_models["GradientBoostingRegressor"] = {}
+        ml_models["GradientBoostingRegressor"]["cls"] = GradientBoostingRegressor
+        ml_models["GradientBoostingRegressor"]["param_grid"] = {
+            # Количество деревьев
+            "n_estimators": [10, 50, 100, 200, 500],
+            # Скорость обучения
+            "learning_rate": [0.01, 0.05, 0.1, 0.2],
+            # Максимальная глубина каждого дерева
+            "max_depth": [None, 2, 5, 10],
+            # Доля выборки для обучения одного дерева
+            "subsample": [0.7, 0.8, 0.9, 1.0],
+            # Ограничение признаков
+            "max_features": [None, "sqrt", 0.8],
+        }
+
+        ml_models["LGBMRegressor"] = {}
+        ml_models["LGBMRegressor"]["cls"] = LGBMRegressor
+        ml_models["LGBMRegressor"]["param_grid"] = {
+            # Количество деревьев
+            "n_estimators": [10, 50, 100, 200, 500],
+            # Скорость обучения
+            "learning_rate": [0.01, 0.05, 0.1, 0.2],
+            # Максимальная глубина каждого дерева
+            "max_depth": [None, 2, 5, 10],
+            # Коэффициент случайной субвыборки признаков
+            "colsample_bytree": [0.8, 1.0],
+        }
+
+        ml_models["XGBRegressor"] = {}
+        ml_models["XGBRegressor"]["cls"] = XGBRegressor
+        ml_models["XGBRegressor"]["param_grid"] = {
+            # Количество деревьев
+            "n_estimators": [10, 50, 100, 200, 500],
+            # Скорость обучения
+            "learning_rate": [0.01, 0.05, 0.1, 0.2],
+            # Максимальная глубина каждого дерева
+            "max_depth": [None, 2, 5, 10],
+            # Минимальное снижение ошибки для создания нового расщепления (регуляризация)
+            "gamma": [0, 0.1, 0.2],
+            # Доля строк (данных) для обучения одного дерева
+            "subsample": [0.8, 1.0],
+            # Коэффициент случайной субвыборки признаков
+            "colsample_bytree": [0.8, 1.0],
+        }
+
+        ml_models["SimpleExpSmoothing"] = {}
+        ml_models["SimpleExpSmoothing"]["cls"] = SimpleExpSmoothing
+        ml_models["SimpleExpSmoothing"]["param_grid"] = {}
+        # ml_models["SimpleExpSmoothing"]["param_grid"] = {
+        #     # Определяет способ выбора стартового значения уровня (с чего начнется сглаживание).
+        #     "initialization_method": ["estimated", "heuristic"],
+        #     # Преобразование Бокса-Кокса. Помогает стабилизировать дисперсию (разброс) данных перед прогнозированием.
+        #     # 'log' полезен, если ночью дисперсия падает, а днем растет
+        #     "use_boxcox": [False, "log"],
         # }
 
-        # ml_models["LGBMRegressor"] = {}
-        # ml_models["LGBMRegressor"]["cls"] = LGBMRegressor
-        # ml_models["LGBMRegressor"]["param_grid"] = {
-        #     # Количество деревьев
-        #     "n_estimators": [10, 50, 100, 200, 500],
-        #     # Скорость обучения
-        #     "learning_rate": [0.01, 0.05, 0.1, 0.2],
-        #     # Максимальная глубина каждого дерева
-        #     "max_depth": [None, 2, 5, 10],
-        #     # Коэффициент случайной субвыборки признаков
-        #     "colsample_bytree": [0.8, 1.0],
+        ml_models["ExponentialSmoothing"] = {}
+        ml_models["ExponentialSmoothing"]["cls"] = ExponentialSmoothing
+        ml_models["ExponentialSmoothing"]["param_grid"] = {}
+        # ml_models["ExponentialSmoothing"]["param_grid"] = {
+        #     # Характер тренда. Может быть отсутствующим (только суточный цикл) (None), аддитивным ('add') или мультипликативным ('mul')
+        #     "trend": ["add", None, "mul"],
+        #     # Характер сезонных колебаний. Может быть отсутствующим (None), аддитивным ('add') или мультипликативным ('mul')
+        #     # 'mul' идеален, если дневные пики пропорциональны общему росту ряда
+        #     "seasonal": ["add", "mul", None],
+        #     # Включение затухания тренда. На часовых данных затухание (True) почти всегда повышает точность, так как тренд не может расти бесконечно.
+        #     "damped_trend": [True, False],
+        #     # Фиксируем суточный цикл (при желании можно протестировать недельную сезонность - 168 часав, но она может не работать из-за недостатка данных для обучения модели)
+        #     "seasonal_periods": [24],
         # }
 
-        # ml_models["XGBRegressor"] = {}
-        # ml_models["XGBRegressor"]["cls"] = XGBRegressor
-        # ml_models["XGBRegressor"]["param_grid"] = {
-        #     # Количество деревьев
-        #     "n_estimators": [10, 50, 100, 200, 500],
-        #     # Скорость обучения
-        #     "learning_rate": [0.01, 0.05, 0.1, 0.2],
-        #     # Максимальная глубина каждого дерева
-        #     "max_depth": [None, 2, 5, 10],
-        #     # Минимальное снижение ошибки для создания нового расщепления (регуляризация)
-        #     "gamma": [0, 0.1, 0.2],
-        #     # Доля строк (данных) для обучения одного дерева
-        #     "subsample": [0.8, 1.0],
-        #     # Коэффициент случайной субвыборки признаков
-        #     "colsample_bytree": [0.8, 1.0],
+        ml_models["Holt"] = {}
+        ml_models["Holt"]["cls"] = Holt
+        ml_models["Holt"]["param_grid"] = {}
+        # ml_models["Holt"]["param_grid"] = {
+        #     "initialization_method": ["estimated"],
+        #     # Тип тренда (линейный или экспоненциальный). Линейный тренд обычно более устойчивый, в то время как экспоненциальный может улетать в бесконечность при прогнозировании на дальнюю перспективу.
+        #     "exponential": [False],
+        #     # Включение затухания тренда. На часовых данных затухание (True) почти всегда повышает точность, так как тренд не может расти бесконечно.
+        #     "damped_trend": [True, False],
         # }
 
-        # Еще добавить нужно будет:
-        # - Базовая модель: прогноз средним значением (среднее по тренировочной далее принимается за прогнозное)
-        # - Наивный прогноз (последнее значение тренировочной далее принимается за прогнозное)
-        # - Суточный наивный прогноз (выбираются последние сутки и далее принимается за прогнозное)
-        # - Модель смещения (y = x + b)
-        # - Модель масштабирования (y = a * x)
-        # - Модели экспоненциального сглаживания (statsmodels.tsa.holtwinters (модель Холта-Винтерса)): SimpleExpSmoothing; ExponentialSmoothing; Holt
+        ml_models["BiasModel"] = {}
+        ml_models["BiasModel"]["cls"] = BiasModel
+        ml_models["BiasModel"]["param_grid"] = {}
+
+        ml_models["ScalingModel"] = {}
+        ml_models["ScalingModel"]["cls"] = ScalingModel
+        ml_models["ScalingModel"]["param_grid"] = {}
 
         return ml_models
 
     def _check_config_models(self, config) -> dict:
+
+        def get_user_model_params(model_cfg) -> dict:
+            model_params = {}
+            for par_name, value in model_cfg.items():
+                if (
+                    par_name != "model"
+                    and par_name != "model-set"
+                    and par_name != "grid-search"
+                    and par_name != "get-result"
+                ):
+                    model_params[par_name] = corr_type(value)
+
+            return model_params
 
         def corr_type(s: str):
             try:
@@ -228,14 +283,10 @@ class Adjustmenter:
         cfg_dict = {s: dict(config.items(s)) for s in config.sections()}
 
         for par_model_key, par_model_cfg in cfg_dict.items():
+            # Определить набор моделей для перебора в зависимости от значения ключа "model"
+            # (auto - все доступные модели, autoset - модели из набора, указанных в "model-set", конкретная модель - только она)
             if par_model_cfg["model"] == "auto":
                 model_set = self.ml_models_list
-
-                if ("get-result" not in par_model_cfg) or (
-                    par_model_cfg["get-result"] not in ["best", "mean"]
-                ):
-                    par_model_cfg["get-result"] = "best"
-
             elif par_model_cfg["model"] == "autoset":
                 if "model-set" not in par_model_cfg:
                     logging.error(
@@ -248,20 +299,12 @@ class Adjustmenter:
                     model_set = [
                         model.strip() for model in par_model_cfg["model-set"].split(",")
                     ]
-                    par_model_cfg["model-set"] = model_set
-
-                if ("get-result" not in par_model_cfg) or (
-                    par_model_cfg["get-result"] not in ["best", "mean"]
-                ):
-                    par_model_cfg["get-result"] = "best"
             else:
                 model_set = [par_model_cfg["model"]]
 
-            if "grid-search" not in par_model_cfg:
-                par_model_cfg["grid-search"] = False
-            else:
-                par_model_cfg[par_name] = corr_type(value)
+            par_model_cfg["model-set"] = model_set
 
+            # Проверка наличия указанных в конфигурации моделей в списке доступных моделей для построения прогноза
             if par_model_cfg["model"] != "auto":
                 for model_name in model_set:
                     if model_name not in self.ml_models_list:
@@ -273,33 +316,46 @@ class Adjustmenter:
                         )
                         return {}
 
+            # Определить, что результат перебора по моделям нужно брать "best" (т.е. модель с наилучшим R2 на тренировочных данных)
+            # или "mean" (т.е. усреднение прогнозов всех моделей)
+            if ("get-result" not in par_model_cfg) or (
+                par_model_cfg["get-result"] not in ["best", "mean"]
+            ):
+                par_model_cfg["get-result"] = "best"
+
+            # Если явно не указано использовать или нет GridSearchCV для подбора гиперпараметров, то использовать значение по умолчанию (False)
+            if "grid-search" not in par_model_cfg:
+                par_model_cfg["grid-search"] = False
+            else:
+                par_model_cfg["grid-search"] = corr_type(par_model_cfg["grid-search"])
+
+            # Определеине списка гиперпараметров, заданных пользователем (только, если не используется GridSearchCV)
+            # При использовании GridSearchCV пользовательские гиперпараметры не учитываются
             model_params_user = {}
-            for par_name, value in par_model_cfg.items():
-                if (
-                    par_name != "model"
-                    and par_name != "grid-search"
-                    and par_name != "model-set"
-                    and par_name != "get-result"
-                ):
-                    model_params_user[par_name] = value
+            if not par_model_cfg["grid-search"]:
+                # Получаем список гиперпараметров, заданных пользователем
+                model_params_user = get_user_model_params(par_model_cfg)
 
-            for model_name in model_set:
-                # Получаем объект сигнатуры
-                sig = inspect.signature(self.ml_models[model_name]["cls"])
-                allowed_params = list(sig.parameters.keys())
+                if model_params_user:
+                    # Проверяем допустимость имен указанных пользователем гиперпараметров для каждой модели в наборе
+                    # (т.е. что эти гиперпараметры существуют для этих моделей)
+                    for model_name in model_set:
+                        # Получаем объект сигнатуры
+                        sig = inspect.signature(self.ml_models[model_name]["cls"])
+                        allowed_params = list(sig.parameters.keys())
 
-                for par_name, par_value in model_params_user.items():
-                    if par_name not in allowed_params:
-                        logging.error(
-                            "В файле с ML-настройками в разделе [%s] для модели %s использовано недопустимое имя гиперпараметра: %s. Доступные гиперпараметры: %s",
-                            par_model_key,
-                            model_name,
-                            par_name,
-                            allowed_params,
-                        )
-                        return {}
-                    else:
-                        par_model_cfg[par_name] = corr_type(par_value)
+                        for par_name in model_params_user:
+                            if par_name not in allowed_params:
+                                logging.error(
+                                    "В файле с ML-настройками в разделе [%s] для модели %s использовано недопустимое имя гиперпараметра: %s. Доступные гиперпараметры: %s",
+                                    par_model_key,
+                                    model_name,
+                                    par_name,
+                                    allowed_params,
+                                )
+                                return {}
+
+            par_model_cfg["model-params-user"] = model_params_user
 
         return cfg_dict
 
@@ -343,20 +399,6 @@ class Adjustmenter:
 
         return status, x_data_no_none, y_data_no_none
 
-    @staticmethod
-    def _get_user_model_params(model_cfg) -> dict:
-
-        model_params = {}
-        for par_name, value in model_cfg.items():
-            if (
-                par_name != "model"
-                and par_name != "grid-search"
-                and par_name != "model-set"
-            ):
-                model_params[par_name] = value
-
-        return model_params
-
     def _get_ml_forecast(
         self,
         model_cfg,  # конкретная модель или auto (т.е. перебор по всем доступным для построения наилучшей)
@@ -367,75 +409,41 @@ class Adjustmenter:
         x_future_predict: list,
     ) -> tuple[list, list]:
 
+        model_set = model_cfg["model-set"]
+        model_params_user = model_cfg["model-params-user"]
+        grid_search_flag = model_cfg["grid-search"]
+        get_result_way = model_cfg["get-result"]
+
         if model_cfg["model"] == "auto":
             logging.info(
-                "Автоматический перебор всех доступных моделей машинного обучения для получения прогноза"
+                "Автоматический перебор всех доступных моделей машинного обучения для получения прогноза: %s",
+                model_set,
             )
-            model_set = self.ml_models_list
-
-            if model_cfg["grid-search"]:
-                logging.info(
-                    "Использование GridSearchCV для подбора гиперпараметров для всех моделей машинного обучения"
-                )
-            else:
-                model_params_user = self._get_user_model_params(model_cfg)
-
-                if model_params_user:
-                    logging.info(
-                        "Использование пользовательских гиперпараметров для всех моделей машинного обучения: %s",
-                        model_params_user,
-                    )
-                else:
-                    logging.info(
-                        "Использование стандартных гиперпараметров для всех моделей машинного обучения"
-                    )
-
         elif model_cfg["model"] == "autoset":
             logging.info(
                 "Автоматический перебор выбранных моделей машинного обучения для получения прогноза: %s",
-                model_cfg["model-set"],
+                model_set,
             )
-            model_set = model_cfg["model-set"]
-
-            if model_cfg["grid-search"]:
-                logging.info(
-                    "Использование GridSearchCV для подбора гиперпараметров для всех моделей машинного обучения"
-                )
-            else:
-                model_params_user = self._get_user_model_params(model_cfg)
-
-                if model_params_user:
-                    logging.info(
-                        "Использование пользовательских гиперпараметров для всех моделей машинного обучения: %s",
-                        model_params_user,
-                    )
-                else:
-                    logging.info(
-                        "Использование стандартных гиперпараметров для всех моделей машинного обучения"
-                    )
         else:
             logging.info(
                 "Использование модели машинного обучения %s для получения прогноза",
-                model_cfg["model"],
+                model_set,
             )
-            model_set = [model_cfg["model"]]
 
-            if model_cfg["grid-search"]:
+        if grid_search_flag:
+            logging.info(
+                "Использование GridSearchCV для подбора наилучшей конфигурации гиперпараметров"
+            )
+        else:
+            if model_params_user:
                 logging.info(
-                    "Использование GridSearchCV для подбора гиперпараметров модели машинного обучения"
+                    "Использование пользовательских гиперпараметров для выбранных моделей машинного обучения: %s",
+                    model_params_user,
                 )
             else:
-                model_params_user = self._get_user_model_params(model_cfg)
-
-                if model_params_user:
-                    logging.info(
-                        "Использование пользовательских гиперпараметров для модели машинного обучения: %s",
-                        model_params_user,
-                    )
-                else:
-                    logging.info(
-                        "Использование стандартных гиперпараметров для модели машинного обучения"
-                    )
+                logging.info(
+                    "Использование стандартных гиперпараметров для выбранных моделей машинного обучения"
+                )
 
         result_predict = {}
         for model_idx, model_name in enumerate(model_set):
@@ -447,13 +455,15 @@ class Adjustmenter:
             try:
                 model_cls = self.ml_models[model_name]["cls"]
 
-                if model_cfg["grid-search"]:
+                if grid_search_flag and self.ml_models[model_name]["param_grid"]:
                     param_grid = self.ml_models[model_name]["param_grid"]
 
                     model = GridSearchCV(model_cls(), param_grid, cv=5)
                     model.fit(np.array(x_train).reshape(-1, 1), y_train)
 
                     # later out model.best_params_ to log and verbose-file
+                    result_predict[model_idx] = {}
+
                     y_test = model.best_estimator_.predict(
                         np.array(x_train).reshape(-1, 1)
                     )
@@ -478,6 +488,8 @@ class Adjustmenter:
                     model.fit(np.array(x_train).reshape(-1, 1), y_train)
 
                     # later out model.params_ to log and verbose-file
+                    result_predict[model_idx] = {}
+
                     y_test = model.predict(np.array(x_train).reshape(-1, 1))
                     result_predict[model_idx]["r2_score"] = r2_score(y_train, y_test)
 
@@ -495,13 +507,13 @@ class Adjustmenter:
                 )
                 logging.info("Переход к следующей модели (если есть)")
                 continue
-        
+
         if result_predict:
             if len(model_set) == 1:
                 y_past_predict = result_predict[0]["y_past_predict"]
                 y_future_predict = result_predict[0]["y_future_predict"]
             else:
-                if model_cfg["get-result"] == "best":
+                if get_result_way == "best":
                     best_model_idx = max(
                         result_predict, key=lambda idx: result_predict[idx]["r2_score"]
                     )
@@ -509,7 +521,7 @@ class Adjustmenter:
                     y_future_predict = result_predict[best_model_idx][
                         "y_future_predict"
                     ]
-                elif model_cfg["get-result"] == "mean":
+                elif get_result_way == "mean":
                     y_past_predict = np.mean(
                         [
                             result_predict[idx]["y_past_predict"]
@@ -527,7 +539,7 @@ class Adjustmenter:
                 else:
                     logging.error(
                         "Недопустимое значение для ключа 'get-result' в ML-конфигурации: %s. Допустимые значения: 'best', 'mean'",
-                        model_cfg["get-result"],
+                        get_result_way,
                     )
                     logging.info("Остановка программы")
                     sys.exit(1)
@@ -585,77 +597,106 @@ class Adjustmenter:
         )
 
         # self.obs_time_past = station["db_time_past"][self.time_depth]
-        # self.mod_time_past = station["om_time_past"][self.time_depth]
+        mod_time_past = station["om_time_past"][self.time_depth]
+        mod_recent = station["om_time_past"]["recent"]
+        idx_recent = mod_time_past.index(mod_recent)
         # self.mod_time_future = station["om_time_future"][self.time_forecast]
 
         for par_short_name, parameter in station["parameters"].items():
-            logging.info(
-                "Получение локального прогноза для параметра %s (код: %s)",
-                parameter["name"],
-                parameter["code"],
-            )
-
-            parameter["om_data_local"] = {}
-            parameter["om_data_local"]["past"] = {}
-            parameter["om_data_local"]["future"] = {}
-
-            parameter["om_data_local_no_corr"] = {}
-            parameter["om_data_local_no_corr"]["past"] = {}
-            parameter["om_data_local_no_corr"]["future"] = {}
-
-            obs_data = parameter["data"][self.time_depth]
-            mod_data_past = parameter["om_data_glob"]["past"][self.time_depth]
-            mod_data_future = parameter["om_data_glob"]["future"][self.time_forecast]
-
-            status, x_train, y_train = self._get_train_sets(mod_data_past, obs_data)
-
-            if status:
-                mod_local_past, mod_local_future = self._get_local_forecast(
-                    par_short_name, x_train, y_train, mod_data_past, mod_data_future
-                )
-
-                parameter["om_data_local_no_corr"]["past"][
-                    self.time_depth
-                ] = mod_local_past
-                parameter["om_data_local_no_corr"]["future"][
-                    self.time_forecast
-                ] = mod_local_future
-
-                mod_local_past_corr, corr_past_percent = self._check_corr_data_bounds(
-                    data=mod_local_past,
-                    min_val=parameter["min_value"],
-                    max_val=parameter["max_value"],
-                )
-                parameter["om_data_local"]["past"][
-                    self.time_depth
-                ] = mod_local_past_corr
-
-                mod_local_future_corr, corr_future_percent = (
-                    self._check_corr_data_bounds(
-                        data=mod_local_future,
-                        min_val=parameter["min_value"],
-                        max_val=parameter["max_value"],
-                    )
-                )
-                parameter["om_data_local"]["future"][
-                    self.time_forecast
-                ] = mod_local_future_corr
-
+            if "om_data_glob" in parameter:
                 logging.info(
-                    "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде и %.2f %% значений прогноза в будущее",
-                    corr_past_percent,
-                    corr_future_percent,
-                )
-            else:
-                logging.error(
-                    "Пропуск получения локального прогноза: большие пропуски в данных (> 10 %)"
+                    "Получение локального прогноза для параметра %s (код: %s)",
+                    parameter["name"],
+                    parameter["code"],
                 )
 
-                parameter["om_data_local"]["past"][self.time_depth] = [
-                    None for _ in mod_data_past
+                parameter["om_data_local"] = {}
+                parameter["om_data_local"]["past"] = {}
+                parameter["om_data_local"]["future"] = {}
+
+                parameter["om_data_local_no_corr"] = {}
+                parameter["om_data_local_no_corr"]["past"] = {}
+                parameter["om_data_local_no_corr"]["future"] = {}
+
+                obs_data = parameter["data"][self.time_depth]
+                mod_data_past = parameter["om_data_glob"]["past"][self.time_depth]
+                mod_data_future = parameter["om_data_glob"]["future"][
+                    self.time_forecast
                 ]
-                parameter["om_data_local"]["future"][self.time_forecast] = [
-                    None for _ in mod_data_past
-                ]
+
+                status, x_train, y_train = self._get_train_sets(mod_data_past, obs_data)
+
+                if status:
+                    mod_local_past, mod_local_future = self._get_local_forecast(
+                        par_short_name, x_train, y_train, mod_data_past, mod_data_future
+                    )
+
+                    parameter["om_data_local_no_corr"]["past"][
+                        self.time_depth
+                    ] = mod_local_past
+
+                    parameter["om_data_local_no_corr"]["future"][
+                        self.time_forecast
+                    ] = mod_local_future
+
+                    mod_local_past_corr, corr_past_percent = (
+                        self._check_corr_data_bounds(
+                            data=mod_local_past,
+                            min_val=parameter["min_value"],
+                            max_val=parameter["max_value"],
+                        )
+                    )
+                    parameter["om_data_local"]["past"][
+                        self.time_depth
+                    ] = mod_local_past_corr
+
+                    mod_local_future_corr, corr_future_percent = (
+                        self._check_corr_data_bounds(
+                            data=mod_local_future,
+                            min_val=parameter["min_value"],
+                            max_val=parameter["max_value"],
+                        )
+                    )
+                    parameter["om_data_local"]["future"][
+                        self.time_forecast
+                    ] = mod_local_future_corr
+
+                    if idx_recent:
+                        parameter["om_data_local_no_corr"]["past"]["recent"] = (
+                            mod_local_past[idx_recent]
+                        )
+                        parameter["om_data_local"]["past"]["recent"] = (
+                            mod_local_past_corr[idx_recent]
+                        )
+                    else:
+                        parameter["om_data_local_no_corr"]["past"]["recent"] = (
+                            mod_local_past[-1]
+                        )
+                        parameter["om_data_local"]["past"]["recent"] = (
+                            mod_local_past_corr[-1]
+                        )
+
+                    logging.info(
+                        "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде и %.2f %% значений прогноза в будущее",
+                        corr_past_percent,
+                        corr_future_percent,
+                    )
+                else:
+                    logging.error(
+                        "Пропуск получения локального прогноза: большие пропуски в данных (> 10 %)"
+                    )
+
+                    parameter["om_data_local"]["past"][self.time_depth] = [
+                        None for _ in mod_data_past
+                    ]
+                    parameter["om_data_local"]["future"][self.time_forecast] = [
+                        None for _ in mod_data_past
+                    ]
+            else:
+                logging.info(
+                    "Невозможно получить локальный прогноз для параметра %s (код: %s), т.к. отсутствуют данные глобального прогноза",
+                    parameter["name"],
+                    parameter["code"],
+                )
 
         return station

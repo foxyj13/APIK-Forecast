@@ -223,6 +223,15 @@ def main():
             logging.info("Остановка программы")
             sys.exit(1)
 
+        ml_adjust = Adjustmenter(
+            config=config_ml,
+            now_date=now_date,
+            time_depth=time_depth,
+            time_forecast=time_forecast,
+            verbose=main_config["ml-verbose"],
+            verbose_dir=main_config["ml-verbose-folder"],
+        )
+
     # Чтение перечня станций и перечня параметров для каждой станции
     stations = read_stations(main_config["stations-file"])
 
@@ -268,15 +277,6 @@ def main():
             # ------------ Если прогноз нужно корректировать ------------
             if mode == "forec_adj":
                 logging.info("Формируем локальные прогнозы")
-
-                ml_adjust = Adjustmenter(
-                    config=config_ml,
-                    now_date=now_date,
-                    time_depth=time_depth,
-                    time_forecast=time_forecast,
-                    verbose=main_config["ml-verbose"],
-                    verbose_dir=main_config["ml-verbose-folder"],
-                )
 
                 for station in stations:
                     # ------------ Корректировка глобальных прогнозов (ML-блок) (локальные прогнозы) ------------
