@@ -18,82 +18,7 @@ from validator import Validator
 from adjustmenter import Adjustmenter
 
 
-def init_logging(config):
-    log_folder = config["main"]["log-folder"]
-    if not os.path.isdir(log_folder):
-        os.mkdir(log_folder)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(module)s.%(funcName)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            TimedRotatingFileHandler(
-                filename=os.path.join(log_folder, "meteo.log"),
-                when="midnight",
-                encoding="utf-8",
-            ),
-            logging.StreamHandler(sys.stdout),
-        ],
-    )
-
-
-def read_stations(stations_file: str) -> list:
-    wb = openpyxl.open(stations_file)
-    ws_stations = wb["Станции"]
-    ws_parameters = wb["Параметры"]
-
-    all_parameters = {}
-    for par_row_id in range(2, ws_parameters.max_row + 1):
-        par_codes = str(ws_parameters[f"B{par_row_id}"].value).split(";")
-        for par_code in par_codes:
-            all_parameters[par_code] = {
-                "name": ws_parameters[f"D{par_row_id}"].value,
-                "code": par_code,
-                "full_name": ws_parameters[f"C{par_row_id}"].value,
-                "short_name": ws_parameters[f"A{par_row_id}"].value,
-                "no_value": ws_parameters[f"E{par_row_id}"].value,
-                "min_value": ws_parameters[f"F{par_row_id}"].value,
-                "max_value": ws_parameters[f"G{par_row_id}"].value,
-                "om_parameter": ws_parameters[f"H{par_row_id}"].value,
-            }
-
-    stations = []
-    for st_row_id in range(2, ws_stations.max_row + 1):
-        parameters = {}
-        value = ws_stations[f"C{st_row_id}"].value
-        if not value:
-            continue
-        par_codes = str(value).split(";")
-        for par_code in par_codes:
-            par_code = par_code.strip()
-            if par_code in all_parameters:
-                parameters[all_parameters[par_code]["name"]] = deepcopy(
-                    all_parameters[par_code]
-                )
-            else:  #'Неизвестный режим: "%s".', mode
-                st_name = ws_stations[f"A{st_row_id}"].value
-                st_code = str(ws_stations[f"B{st_row_id}"].value)
-                logging.warning(
-                    "Внимание! Для станции %s (%s) отсутствует параметр в кодом %s. Пропускаю этот параметр.",
-                    st_name,
-                    st_code,
-                    par_code,
-                )
-        stations.append(
-            {
-                "full_name": ws_stations[f"A{st_row_id}"].value,
-                "code": str(ws_stations[f"B{st_row_id}"].value),
-                "lat": ws_stations[f"E{st_row_id}"].value,
-                "lon": ws_stations[f"F{st_row_id}"].value,
-                "parameters": parameters,
-            }
-        )
-
-    return stations
-
-
-def main():
-    # ------------ Получение аргументов программы ------------
+def read_args():
     parser = argparse.ArgumentParser(
         description="Meteostations and model forecasts reader"
     )
@@ -146,11 +71,96 @@ def main():
         type=str,
         default="config.ini",
     )
-    args = parser.parse_args()
+
+    return parser.parse_args()
+
+
+def init_logging(config):
+    log_folder = config["main"]["log-folder"]
+    if not os.path.isdir(log_folder):
+        os.mkdir(log_folder)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(module)s.%(funcName)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[
+            TimedRotatingFileHandler(
+                filename=os.path.join(log_folder, "meteo.log"),
+                when="midnight",
+                encoding="utf-8",
+            ),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+
+def read_stations(stations_file: str) -> list:
+    wb = openpyxl.open(stations_file)
+    ws_stations = wb["Станции"]
+    ws_parameters = wb["Параметры"]
+
+    all_parameters = {}
+    for par_row_id in range(2, ws_parameters.max_row + 1):
+        par_codes = str(ws_parameters[f"B{par_row_id}"].value).split(";")
+        for par_code in par_codes:
+            all_parameters[par_code] = {
+                "name": ws_parameters[f"D{par_row_id}"].value,
+                "code": par_code,
+                "full_name": ws_parameters[f"C{par_row_id}"].value,
+                "short_name": ws_parameters[f"A{par_row_id}"].value,
+                "no_value": ws_parameters[f"E{par_row_id}"].value,
+                "min_value": ws_parameters[f"F{par_row_id}"].value,
+                "max_value": ws_parameters[f"G{par_row_id}"].value,
+                "om_parameter": [
+                    tmp.strip()
+                    for tmp in str(ws_parameters[f"H{par_row_id}"].value).split(";")
+                ],
+            }
+
+    stations = []
+    for st_row_id in range(2, ws_stations.max_row + 1):
+        parameters = {}
+        value = ws_stations[f"C{st_row_id}"].value
+        if not value:
+            continue
+        par_codes = str(value).split(";")
+        for par_code in par_codes:
+            par_code = par_code.strip()
+            if par_code in all_parameters:
+                parameters[all_parameters[par_code]["name"]] = deepcopy(
+                    all_parameters[par_code]
+                )
+            else:  #'Неизвестный режим: "%s".', mode
+                st_name = ws_stations[f"A{st_row_id}"].value
+                st_code = str(ws_stations[f"B{st_row_id}"].value)
+                logging.warning(
+                    "Внимание! Для станции %s (%s) отсутствует параметр в кодом %s. Пропускаю этот параметр.",
+                    st_name,
+                    st_code,
+                    par_code,
+                )
+        stations.append(
+            {
+                "full_name": ws_stations[f"A{st_row_id}"].value,
+                "code": str(ws_stations[f"B{st_row_id}"].value),
+                "lat": ws_stations[f"E{st_row_id}"].value,
+                "lon": ws_stations[f"F{st_row_id}"].value,
+                "parameters": parameters,
+            }
+        )
+
+    return stations
+
+
+def main():
+    # ------------ Получение аргументов программы ------------
+    args = read_args()
     mode = args.mode
     time_depth = args.time_depth
     time_forecast = args.time_forecast
     now_date = args.now_date
+
+    now = datetime.date.today()
 
     # ------------ Чтение конфигурационного файла .ini (args.config) ------------
     config = ConfigParser()
@@ -180,7 +190,6 @@ def main():
         main_config["export_enable"] = "True"
 
     init_logging(config)
-
     logging.info("Начинаем работу!")
 
     logging.info("Проверка сочетания значений входных ключей программы")
@@ -198,6 +207,11 @@ def main():
         logging.info("Остановка программы")
         sys.exit(1)
 
+    # ------------ Чтение перечня станций и перечня параметров для каждой станции ------------
+    stations = read_stations(main_config["stations-file"])
+
+    # ----------- Если прогноз нужно корректировать: ------------
+    # Чтение конфигурационного файла для ML-блока (config_ml.ini)
     if mode == "forec_adj":
         logging.info("Проверка наличия config_ml.ini")
         if not os.path.exists(main_config["ml-config-file"]):
@@ -231,9 +245,6 @@ def main():
             verbose=main_config["ml-verbose"],
             verbose_dir=main_config["ml-verbose-folder"],
         )
-
-    # Чтение перечня станций и перечня параметров для каждой станции
-    stations = read_stations(main_config["stations-file"])
 
     # ------------ Чтение данных наблюдений ------------
     db_reader = DBReader(
