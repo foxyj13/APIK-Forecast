@@ -5,7 +5,7 @@ class BiasModel:
     """Модель смещения (y = x + b)"""
 
     def __init__(self):
-        pass
+        self.bias_ = 0.0
 
     def fit(self, X, y):
         self.bias_ = (y - X).mean()
@@ -18,7 +18,7 @@ class ScalingModel:
     """Модель масштабирования (y = a * x)"""
 
     def __init__(self):
-        pass
+        self.scale_ = 1.0
 
     def fit(self, X, y):
         self.scale_ = (y / X).mean()
