@@ -50,7 +50,16 @@ class Adjustmenter:
             "Для использования доступны следующие модели машинного обучения: %s",
             self.ml_models_list,
         )
+        self.exp_models = {"Holt", "ExponentialSmoothing", "SimpleExpSmoothing"}
+        self.base_models = {"BiasModel", "ScalingModel"}
 
+        self.config_keys_system = [
+            "model",
+            "model-set",
+            "grid-search",
+            "get-result",
+            "predictor-set",
+        ]
         self.config = self._check_config_models(config)
         if not self.config:
             logging.error(
@@ -77,6 +86,7 @@ class Adjustmenter:
             # Будут ли все веса моедли строго неотрицательными
             "positive": [True, False],
         }
+        ml_models["LinearRegression"]["default_params"] = {}
 
         ml_models["Ridge"] = {}
         ml_models["Ridge"]["cls"] = Ridge
@@ -92,6 +102,7 @@ class Adjustmenter:
             # 'cholesky' хорош для плотных матриц, 'sag'/'saga' — для больших датасетов
             "solver": ["auto", "cholesky", "svd", "sag"],
         }  # Для подбора alpha лучше использовать RidgeCV вместо стандартного GridSearchCV
+        ml_models["Ridge"]["default_params"] = {}
 
         ml_models["Lasso"] = {}
         ml_models["Lasso"]["cls"] = Lasso
@@ -105,6 +116,7 @@ class Adjustmenter:
             # Максимальное число итераций (для Lasso важно, так как оно сходится дольше)
             "max_iter": [1000, 5000],
         }  # Для подбора alpha лучше использовать LassoCV вместо стандартного GridSearchCV
+        ml_models["Lasso"]["default_params"] = {}
 
         ml_models["ElasticNet"] = {}
         ml_models["ElasticNet"]["cls"] = ElasticNet
@@ -121,6 +133,7 @@ class Adjustmenter:
             # Максимальное число итераци
             "max_iter": [1000, 5000],
         }
+        ml_models["ElasticNet"]["default_params"] = {}
 
         ml_models["KNeighborsRegressor"] = {}
         ml_models["KNeighborsRegressor"]["cls"] = KNeighborsRegressor
@@ -134,6 +147,7 @@ class Adjustmenter:
             # Степенной параметр для метрики Минковского
             "p": [1, 2],
         }
+        ml_models["KNeighborsRegressor"]["default_params"] = {}
 
         ml_models["DecisionTreeRegressor"] = {}
         ml_models["DecisionTreeRegressor"]["cls"] = DecisionTreeRegressor
@@ -145,6 +159,7 @@ class Adjustmenter:
             # Критерий качества расщепления
             "criterion": ["squared_error", "friedman_mse", "absolute_error"],
         }
+        ml_models["DecisionTreeRegressor"]["default_params"] = {}
 
         ml_models["RandomForestRegressor"] = {}
         ml_models["RandomForestRegressor"]["cls"] = RandomForestRegressor
@@ -156,6 +171,7 @@ class Adjustmenter:
             # Максимальное количество признаков для поиска разбиения
             "max_features": [None, "auto", "sqrt", "log2"],
         }
+        ml_models["RandomForestRegressor"]["default_params"] = {}
 
         ml_models["GradientBoostingRegressor"] = {}
         ml_models["GradientBoostingRegressor"]["cls"] = GradientBoostingRegressor
@@ -171,6 +187,7 @@ class Adjustmenter:
             # Ограничение признаков
             "max_features": [None, "sqrt", 0.8],
         }
+        ml_models["GradientBoostingRegressor"]["default_params"] = {}
 
         ml_models["LGBMRegressor"] = {}
         ml_models["LGBMRegressor"]["cls"] = LGBMRegressor
@@ -184,6 +201,7 @@ class Adjustmenter:
             # Коэффициент случайной субвыборки признаков
             "colsample_bytree": [0.8, 1.0],
         }
+        ml_models["LGBMRegressor"]["default_params"] = {}
 
         ml_models["XGBRegressor"] = {}
         ml_models["XGBRegressor"]["cls"] = XGBRegressor
@@ -201,6 +219,7 @@ class Adjustmenter:
             # Коэффициент случайной субвыборки признаков
             "colsample_bytree": [0.8, 1.0],
         }
+        ml_models["XGBRegressor"]["default_params"] = {}
 
         ml_models["SimpleExpSmoothing"] = {}
         ml_models["SimpleExpSmoothing"]["cls"] = SimpleExpSmoothing
@@ -212,6 +231,7 @@ class Adjustmenter:
         #     # 'log' полезен, если ночью дисперсия падает, а днем растет
         #     "use_boxcox": [False, "log"],
         # }
+        ml_models["SimpleExpSmoothing"]["default_params"] = {}
 
         ml_models["ExponentialSmoothing"] = {}
         ml_models["ExponentialSmoothing"]["cls"] = ExponentialSmoothing
@@ -227,6 +247,7 @@ class Adjustmenter:
         #     # Фиксируем суточный цикл (при желании можно протестировать недельную сезонность - 168 часав, но она может не работать из-за недостатка данных для обучения модели)
         #     "seasonal_periods": [24],
         # }
+        ml_models["ExponentialSmoothing"]["default_params"] = {}
 
         ml_models["Holt"] = {}
         ml_models["Holt"]["cls"] = Holt
@@ -238,14 +259,17 @@ class Adjustmenter:
         #     # Включение затухания тренда. На часовых данных затухание (True) почти всегда повышает точность, так как тренд не может расти бесконечно.
         #     "damped_trend": [True, False],
         # }
+        ml_models["Holt"]["default_params"] = {}
 
         ml_models["BiasModel"] = {}
         ml_models["BiasModel"]["cls"] = BiasModel
         ml_models["BiasModel"]["param_grid"] = {}
+        ml_models["BiasModel"]["default_params"] = {}
 
         ml_models["ScalingModel"] = {}
         ml_models["ScalingModel"]["cls"] = ScalingModel
         ml_models["ScalingModel"]["param_grid"] = {}
+        ml_models["ScalingModel"]["default_params"] = {}
 
         return ml_models
 
@@ -254,12 +278,7 @@ class Adjustmenter:
         def get_user_model_params(model_cfg) -> dict:
             model_params = {}
             for par_name, value in model_cfg.items():
-                if (
-                    par_name != "model"
-                    and par_name != "model-set"
-                    and par_name != "grid-search"
-                    and par_name != "get-result"
-                ):
+                if par_name not in self.config_keys_system:
                     model_params[par_name] = corr_type(value)
 
             return model_params
@@ -280,13 +299,22 @@ class Adjustmenter:
                     else:
                         return s
 
+        logging.info("Проверка заданных ML-настроек")
+
         cfg_dict = {s: dict(config.items(s)) for s in config.sections()}
 
         for par_model_key, par_model_cfg in cfg_dict.items():
+            logging.info("Проверка раздела [%s]", par_model_key)
+
             # Определить набор моделей для перебора в зависимости от значения ключа "model"
             # (auto - все доступные модели, autoset - модели из набора, указанных в "model-set", конкретная модель - только она)
+            logging.info("Определение набора моделей для расчетов")
             if par_model_cfg["model"] == "auto":
                 model_set = self.ml_models_list
+                logging.info(
+                    "Для расчетов будут использованы все доступные модели: %s",
+                    model_set,
+                )
             elif par_model_cfg["model"] == "autoset":
                 if "model-set" not in par_model_cfg:
                     logging.error(
@@ -299,13 +327,22 @@ class Adjustmenter:
                     model_set = [
                         model.strip() for model in par_model_cfg["model-set"].split(",")
                     ]
+                    logging.info(
+                        "Для расчетов будет использован следующий поднабор моделей: %s",
+                        model_set,
+                    )
             else:
                 model_set = [par_model_cfg["model"]]
+                logging.info(
+                    "Для расчетов будет использована только одна модель: %s", model_set
+                )
 
             par_model_cfg["model-set"] = model_set
 
-            # Проверка наличия указанных в конфигурации моделей в списке доступных моделей для построения прогноза
             if par_model_cfg["model"] != "auto":
+                logging.info(
+                    "Проверка наличия указанных в конфигурации моделей в списке доступных моделей для построения прогноза"
+                )
                 for model_name in model_set:
                     if model_name not in self.ml_models_list:
                         logging.error(
@@ -316,46 +353,125 @@ class Adjustmenter:
                         )
                         return {}
 
+            logging.info("Проверка указания кастомного набора предикторов")
+            if "predictor-set" in par_model_cfg:
+                par_model_cfg["predictor-set"] = [
+                    predictor.strip()
+                    for predictor in par_model_cfg["predictor-set"].split(",")
+                ]
+                logging.info(
+                    "Будет использован пользовательский набор предикторов (заменит предикторы по умолчанию, если они есть, см. файл со станциями и параметрами)"
+                )
+            else:
+                par_model_cfg["predictor-set"] = []
+                logging.info(
+                    "Будут использованы предикторы по умолчанию (см. файл со станциями и параметрами)"
+                )
+
+            # Определяем метрику для внутренней оценки качества прогноза и по которой будет выбираться наилучший результат
+            if "best-result_metrics" not in par_model_cfg:
+                par_model_cfg["best-result_metrics"] = "r2"
+                logging.info(
+                    "Для внутренней оценки качества прогноза на тренировочном наборе будет использована метрика %s",
+                    par_model_cfg["best-result_metrics"],
+                )
+            else:
+                par_model_cfg["best-result_metrics"] = par_model_cfg[
+                    "best-result_metrics"
+                ].lower()
+                if par_model_cfg["best-result_metrics"] in {"r2", "rmse", "mae"}:
+                    logging.info(
+                        "Для внутренней оценки качества прогноза на тренировочном наборе будет использована метрика %s",
+                        par_model_cfg["best-result_metrics"],
+                    )
+                else:
+                    logging.info(
+                        "Указанная недопустимая метрика для внутренней оценки качества (%s). Вместо нее будет использована метрика по умолчанию (r2)",
+                        par_model_cfg["best-result_metrics"],
+                    )
+                    par_model_cfg["best-result_metrics"] = "r2"
+
             # Определить, что результат перебора по моделям нужно брать "best" (т.е. модель с наилучшим R2 на тренировочных данных)
             # или "mean" (т.е. усреднение прогнозов всех моделей)
             if ("get-result" not in par_model_cfg) or (
                 par_model_cfg["get-result"] not in ["best", "mean"]
             ):
                 par_model_cfg["get-result"] = "best"
+                logging.info(
+                    "При использовании для расчетов набора моделей в качестве результата будет использован наилучший по метрике %s",
+                    par_model_cfg["best-result_metrics"],
+                )
+            else:
+                logging.info(
+                    "При использовании для расчетов набора моделей в качестве результата будет использовано среднее по расчетам всех моделей набора"
+                )
 
             # Если явно не указано использовать или нет GridSearchCV для подбора гиперпараметров, то использовать значение по умолчанию (False)
             if "grid-search" not in par_model_cfg:
                 par_model_cfg["grid-search"] = False
+                logging.info(
+                    "Использование GridSearchCV по умолчанию отключено. В расчете использовано не будет."
+                )
             else:
                 par_model_cfg["grid-search"] = corr_type(par_model_cfg["grid-search"])
+                if par_model_cfg["grid-search"]:
+                    logging.info("Подключено использование GridSearchCV")
+                else:
+                    logging.info("Отключено использование GridSearchCV")
 
-            # Определеине списка гиперпараметров, заданных пользователем (только, если не используется GridSearchCV)
-            # При использовании GridSearchCV пользовательские гиперпараметры не учитываются
+            # GridSearchCV нельзя использовать для моделей  Holt, ExponentialSmoothing, SimpleExpSmoothing, BiasModel, ScalingModel
+            if set(model_set) & (self.exp_models | self.base_models):
+                par_model_cfg["grid-search"] = False
+                logging.info(
+                    "Использование GridSearchCV невозможно с базовыми и экспоненциальными моделями (%s; %s). В расчете GridSearchCV использован не будет",
+                    self.exp_models,
+                    self.base_models,
+                )
+
             model_params_user = {}
             if not par_model_cfg["grid-search"]:
-                # Получаем список гиперпараметров, заданных пользователем
+                logging.info("Получение списка гиперпараметров, заданных пользователем")
                 model_params_user = get_user_model_params(par_model_cfg)
 
                 if model_params_user:
-                    # Проверяем допустимость имен указанных пользователем гиперпараметров для каждой модели в наборе
-                    # (т.е. что эти гиперпараметры существуют для этих моделей)
-                    for model_name in model_set:
-                        # Получаем объект сигнатуры
-                        sig = inspect.signature(self.ml_models[model_name]["cls"])
-                        allowed_params = list(sig.parameters.keys())
+                    if set(model_set) & self.base_models:
+                        logging.info(
+                            "В списке моделей есть базовая. Пользовательские гиперпараметры игнорируются"
+                        )
+                        model_params_user = {}
+                    else:
+                        logging.info(
+                            "Проверка допустимости имен указанных пользователем гиперпараметров для каждой модели в наборе"
+                        )
+                        for model_name in model_set:
+                            # Получаем объект сигнатуры
+                            sig = inspect.signature(self.ml_models[model_name]["cls"])
+                            allowed_params = list(sig.parameters.keys())
 
-                        for par_name in model_params_user:
-                            if par_name not in allowed_params:
-                                logging.error(
-                                    "В файле с ML-настройками в разделе [%s] для модели %s использовано недопустимое имя гиперпараметра: %s. Доступные гиперпараметры: %s",
-                                    par_model_key,
-                                    model_name,
-                                    par_name,
-                                    allowed_params,
-                                )
-                                return {}
+                            for par_name in model_params_user:
+                                if par_name not in allowed_params:
+                                    logging.error(
+                                        "В файле с ML-настройками в разделе [%s] для модели %s использовано недопустимое имя гиперпараметра: %s. Доступные гиперпараметры: %s",
+                                        par_model_key,
+                                        model_name,
+                                        par_name,
+                                        allowed_params,
+                                    )
+                                    return {}
+                else:
+                    logging.info("Дополнительных гиперпараметров не задано")
+            else:
+                logging.info(
+                    "При использовании GridSearchCV пользовательские гиперпараметры игнорируются"
+                )
 
             par_model_cfg["model-params-user"] = model_params_user
+
+            if par_model_cfg["model-params-user"]:
+                logging.info(
+                    "Дляя моделей будут использованы следующие гиперпараметры, заданные пользователем: %s",
+                    par_model_cfg["model-params-user"],
+                )
 
         return cfg_dict
 
@@ -627,6 +743,9 @@ class Adjustmenter:
                 status, x_train, y_train = self._get_train_sets(mod_data_past, obs_data)
 
                 if status:
+                    # TODO:
+                    # 1. Проверить на наличие None списков данных mod_data_past, mod_data_future.
+                    # Если None есть, то их исключить, но запомнить их позиции для последующего восстановления (т.е. вставки None в эти позиции в прогнозе)
                     mod_local_past, mod_local_future = self._get_local_forecast(
                         par_short_name, x_train, y_train, mod_data_past, mod_data_future
                     )
@@ -681,6 +800,10 @@ class Adjustmenter:
                         corr_past_percent,
                         corr_future_percent,
                     )
+                    # TODO: если включен verbose, то записать в verbose-файл в формате JSON информацию о построенных прогнозах
+                    # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
+                    # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
+
                 else:
                     logging.error(
                         "Пропуск получения локального прогноза: большие пропуски в данных (> 10 %)"
