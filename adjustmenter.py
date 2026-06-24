@@ -53,12 +53,15 @@ class Adjustmenter:
         self.exp_models = {"Holt", "ExponentialSmoothing", "SimpleExpSmoothing"}
         self.base_models = {"BiasModel", "ScalingModel"}
 
+        self.inner_metrics = {"r2", "rmse", "mae"}
+
         self.config_keys_system = [
             "model",
             "model-set",
             "grid-search",
             "get-result",
             "predictor-set",
+            "best-result-metrics",
         ]
         self.config = self._check_config_models(config)
         if not self.config:
@@ -308,17 +311,19 @@ class Adjustmenter:
 
             # Определить набор моделей для перебора в зависимости от значения ключа "model"
             # (auto - все доступные модели, autoset - модели из набора, указанных в "model-set", конкретная модель - только она)
-            logging.info("Определение набора моделей для расчетов")
-            if par_model_cfg["model"] == "auto":
+            logging.info("[%s] Определение набора моделей для расчетов", par_model_key)
+            if par_model_cfg["model"].lower() == "auto":
                 model_set = self.ml_models_list
                 logging.info(
-                    "Для расчетов будут использованы все доступные модели: %s",
+                    "[%s] Для расчетов будут использованы все доступные модели: %s",
+                    par_model_key,
                     model_set,
                 )
-            elif par_model_cfg["model"] == "autoset":
+            elif par_model_cfg["model"].lower() == "autoset":
                 if "model-set" not in par_model_cfg:
                     logging.error(
-                        "В файле с ML-настройками в разделе [%s] указано значение 'autoset' для ключа 'model', но не указан ключ 'model-set' с перечнем моделей для перебора. Необходимо указать 'model-set' с перечнем моделей из доступных: %s",
+                        "[%s] В файле с ML-настройками в разделе [%s] указано значение 'autoset' для ключа 'model', но не указан ключ 'model-set' с перечнем моделей для перебора. Необходимо указать 'model-set' с перечнем моделей из доступных: %s",
+                        par_model_key,
                         par_model_key,
                         self.ml_models_list,
                     )
@@ -328,120 +333,153 @@ class Adjustmenter:
                         model.strip() for model in par_model_cfg["model-set"].split(",")
                     ]
                     logging.info(
-                        "Для расчетов будет использован следующий поднабор моделей: %s",
+                        "[%s] Для расчетов будет использован следующий поднабор моделей: %s",
+                        par_model_key,
                         model_set,
                     )
             else:
                 model_set = [par_model_cfg["model"]]
                 logging.info(
-                    "Для расчетов будет использована только одна модель: %s", model_set
+                    "[%s] Для расчетов будет использована только одна модель: %s",
+                    par_model_key,
+                    model_set,
                 )
 
             par_model_cfg["model-set"] = model_set
 
-            if par_model_cfg["model"] != "auto":
+            if par_model_cfg["model"].lower() != "auto":
                 logging.info(
-                    "Проверка наличия указанных в конфигурации моделей в списке доступных моделей для построения прогноза"
+                    "[%s] Проверка наличия указанных в конфигурации моделей в списке доступных моделей для построения прогноза",
+                    par_model_key,
                 )
                 for model_name in model_set:
                     if model_name not in self.ml_models_list:
                         logging.error(
-                            "В файле с ML-настройками в разделе [%s] модель %s не входят в список доступных ML-моделей. Доступные модели: %s",
+                            "[%s] В файле с ML-настройками в разделе [%s] модель %s не входят в список доступных ML-моделей. Доступные модели: %s",
+                            par_model_key,
                             par_model_key,
                             model_name,
                             self.ml_models_list,
                         )
                         return {}
 
-            logging.info("Проверка указания кастомного набора предикторов")
+            logging.info(
+                "[%s] Проверка указания кастомного набора предикторов", par_model_key
+            )
             if "predictor-set" in par_model_cfg:
                 par_model_cfg["predictor-set"] = [
                     predictor.strip()
                     for predictor in par_model_cfg["predictor-set"].split(",")
                 ]
                 logging.info(
-                    "Будет использован пользовательский набор предикторов (заменит предикторы по умолчанию, если они есть, см. файл со станциями и параметрами)"
+                    "[%s] Будет использован пользовательский набор предикторов (заменит предикторы по умолчанию, если они есть, см. файл со станциями и параметрами): %s",
+                    par_model_key,
+                    par_model_cfg["predictor-set"],
                 )
             else:
                 par_model_cfg["predictor-set"] = []
                 logging.info(
-                    "Будут использованы предикторы по умолчанию (см. файл со станциями и параметрами)"
+                    "[%s] Будут использованы предикторы по умолчанию (см. файл со станциями и параметрами)",
+                    par_model_key,
                 )
 
             # Определяем метрику для внутренней оценки качества прогноза и по которой будет выбираться наилучший результат
-            if "best-result_metrics" not in par_model_cfg:
-                par_model_cfg["best-result_metrics"] = "r2"
+            if "best-result-metrics" not in par_model_cfg:
+                par_model_cfg["best-result-metrics"] = "r2"
                 logging.info(
-                    "Для внутренней оценки качества прогноза на тренировочном наборе будет использована метрика %s",
-                    par_model_cfg["best-result_metrics"],
+                    "[%s] Для внутренней оценки качества прогноза на тренировочном наборе будет использована метрика %s",
+                    par_model_key,
+                    par_model_cfg["best-result-metrics"],
                 )
             else:
-                par_model_cfg["best-result_metrics"] = par_model_cfg[
-                    "best-result_metrics"
+                par_model_cfg["best-result-metrics"] = par_model_cfg[
+                    "best-result-metrics"
                 ].lower()
-                if par_model_cfg["best-result_metrics"] in {"r2", "rmse", "mae"}:
+                if par_model_cfg["best-result-metrics"] in self.inner_metrics:
                     logging.info(
-                        "Для внутренней оценки качества прогноза на тренировочном наборе будет использована метрика %s",
-                        par_model_cfg["best-result_metrics"],
+                        "[%s] Для внутренней оценки качества прогноза на тренировочном наборе будет использована метрика %s",
+                        par_model_key,
+                        par_model_cfg["best-result-metrics"],
                     )
                 else:
                     logging.info(
-                        "Указанная недопустимая метрика для внутренней оценки качества (%s). Вместо нее будет использована метрика по умолчанию (r2)",
-                        par_model_cfg["best-result_metrics"],
+                        "[%s] Указанная недопустимая метрика для внутренней оценки качества (%s). Вместо нее будет использована метрика по умолчанию (r2)",
+                        par_model_key,
+                        par_model_cfg["best-result-metrics"],
                     )
-                    par_model_cfg["best-result_metrics"] = "r2"
+                    par_model_cfg["best-result-metrics"] = "r2"
 
             # Определить, что результат перебора по моделям нужно брать "best" (т.е. модель с наилучшим R2 на тренировочных данных)
             # или "mean" (т.е. усреднение прогнозов всех моделей)
             if ("get-result" not in par_model_cfg) or (
-                par_model_cfg["get-result"] not in ["best", "mean"]
+                par_model_cfg["get-result"] not in {"best", "mean"}
             ):
                 par_model_cfg["get-result"] = "best"
                 logging.info(
-                    "При использовании для расчетов набора моделей в качестве результата будет использован наилучший по метрике %s",
-                    par_model_cfg["best-result_metrics"],
+                    "[%s] При использовании для расчетов набора моделей в качестве результата будет использован наилучший по метрике %s",
+                    par_model_key,
+                    par_model_cfg["best-result-metrics"],
                 )
             else:
-                logging.info(
-                    "При использовании для расчетов набора моделей в качестве результата будет использовано среднее по расчетам всех моделей набора"
-                )
+                if par_model_cfg["get-result"] == "mean":
+                    logging.info(
+                        "[%s] При использовании для расчетов набора моделей в качестве результата будет использовано среднее по расчетам всех моделей набора",
+                        par_model_key,
+                    )
+                else:
+                    logging.info(
+                        "[%s] При использовании для расчетов набора моделей в качестве результата будет использован наилучший по метрике %s",
+                        par_model_key,
+                        par_model_cfg["best-result-metrics"],
+                    )
 
             # Если явно не указано использовать или нет GridSearchCV для подбора гиперпараметров, то использовать значение по умолчанию (False)
             if "grid-search" not in par_model_cfg:
                 par_model_cfg["grid-search"] = False
                 logging.info(
-                    "Использование GridSearchCV по умолчанию отключено. В расчете использовано не будет."
+                    "[%s] Использование GridSearchCV по умолчанию отключено. В расчете использовано не будет",
+                    par_model_key,
                 )
             else:
                 par_model_cfg["grid-search"] = corr_type(par_model_cfg["grid-search"])
                 if par_model_cfg["grid-search"]:
-                    logging.info("Подключено использование GridSearchCV")
+                    logging.info(
+                        "[%s] Подключено использование GridSearchCV", par_model_key
+                    )
                 else:
-                    logging.info("Отключено использование GridSearchCV")
+                    logging.info(
+                        "[%s] Отключено использование GridSearchCV", par_model_key
+                    )
 
             # GridSearchCV нельзя использовать для моделей  Holt, ExponentialSmoothing, SimpleExpSmoothing, BiasModel, ScalingModel
             if set(model_set) & (self.exp_models | self.base_models):
                 par_model_cfg["grid-search"] = False
                 logging.info(
-                    "Использование GridSearchCV невозможно с базовыми и экспоненциальными моделями (%s; %s). В расчете GridSearchCV использован не будет",
+                    "[%s] Использование GridSearchCV невозможно с базовыми и экспоненциальными моделями (%s; %s). В расчете GridSearchCV использован не будет",
+                    par_model_key,
                     self.exp_models,
                     self.base_models,
                 )
 
             model_params_user = {}
             if not par_model_cfg["grid-search"]:
-                logging.info("Получение списка гиперпараметров, заданных пользователем")
+                logging.info(
+                    "[%s] Получение списка гиперпараметров, заданных пользователем",
+                    par_model_key,
+                )
                 model_params_user = get_user_model_params(par_model_cfg)
 
                 if model_params_user:
                     if set(model_set) & self.base_models:
                         logging.info(
-                            "В списке моделей есть базовая. Пользовательские гиперпараметры игнорируются"
+                            "[%s] В списке моделей есть базовая. Пользовательские гиперпараметры игнорируются",
+                            par_model_key,
                         )
                         model_params_user = {}
                     else:
                         logging.info(
-                            "Проверка допустимости имен указанных пользователем гиперпараметров для каждой модели в наборе"
+                            "[%s] Проверка допустимости имен указанных пользователем гиперпараметров для каждой модели в наборе",
+                            par_model_key,
                         )
                         for model_name in model_set:
                             # Получаем объект сигнатуры
@@ -451,7 +489,7 @@ class Adjustmenter:
                             for par_name in model_params_user:
                                 if par_name not in allowed_params:
                                     logging.error(
-                                        "В файле с ML-настройками в разделе [%s] для модели %s использовано недопустимое имя гиперпараметра: %s. Доступные гиперпараметры: %s",
+                                        "[%s] В файле с ML-настройками для модели %s использовано недопустимое имя гиперпараметра: %s. Доступные гиперпараметры: %s",
                                         par_model_key,
                                         model_name,
                                         par_name,
@@ -459,17 +497,21 @@ class Adjustmenter:
                                     )
                                     return {}
                 else:
-                    logging.info("Дополнительных гиперпараметров не задано")
+                    logging.info(
+                        "[%s] Дополнительных гиперпараметров не задано", par_model_key
+                    )
             else:
                 logging.info(
-                    "При использовании GridSearchCV пользовательские гиперпараметры игнорируются"
+                    "[%s] При использовании GridSearchCV пользовательские гиперпараметры игнорируются",
+                    par_model_key,
                 )
 
             par_model_cfg["model-params-user"] = model_params_user
 
             if par_model_cfg["model-params-user"]:
                 logging.info(
-                    "Дляя моделей будут использованы следующие гиперпараметры, заданные пользователем: %s",
+                    "[%s] Для моделей будут использованы следующие гиперпараметры, заданные пользователем: %s",
+                    par_model_key,
                     par_model_cfg["model-params-user"],
                 )
 

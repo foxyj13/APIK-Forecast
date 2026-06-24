@@ -264,10 +264,23 @@ def main():
                 dell_stations.append(idx)
                 logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
 
-        # Удаление из рассмотрения станций, наблюдения для которых считать не удалось
-        # if dell_stations:
-        for idx in sorted(dell_stations, reverse=True):
-            del stations[idx]
+        if dell_stations:
+            logging.info(
+                "Удаление из рассмотрения %d станций, наблюдения для которых считать не удалось: %s",
+                len(dell_stations),
+                [
+                    f"{stations[idx]['full_name']} ({stations[idx]['code']})"
+                    for idx in dell_stations
+                ],
+            )
+            for idx in sorted(dell_stations, reverse=True):
+                del stations[idx]
+
+        if not stations:
+            logging.info(
+                "Нет ни одной станции для рассмотрения. Возможная причина: 1) ни одна станция не указана для рассмотрения; 2) ни по одной станции ни для одного параметра не удалось считать данные"
+            )
+            sys.exit(1)
 
     if (mode == "forec_adj") or (args.add_globforecast_plot == "yes"):
         # ------------ Чтение глобальных прогнозов ------------
