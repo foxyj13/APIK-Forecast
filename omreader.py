@@ -46,19 +46,25 @@ class OMReader:
             station["full_name"],
         )
 
+        # Инициализация ветки в station для хранения OM-метеопараметров
+        station["om_parameters"] = {}
+
+        # Формирование перечня OM-метеопараметров, необходимых для дальнейшей работы по этой станции
+        om_parameters_list = set()
+        for _, par_info in station["parameters"].items():
+            om_parameters_list = om_parameters_list | set(par_info["om_parameters"])
+        om_parameters_list = [
+            par_name
+            for par_name in list(om_parameters_list)
+            if (par_name is not None) and (par_name != "None")
+        ]
+
         # Сформировать json для получения данных
         lat = station["lat"]
         lon = station["lon"]
 
         # timezone_obj = TimezoneFinder()
         # timezone_str = timezone_obj.timezone_at(lng=lon, lat=lat)
-
-        om_parameters_list = []
-        db_parameters_list = []
-        for db_par in station["parameters"].keys():
-            if station["parameters"][db_par]["om_parameter"]:
-                om_parameters_list.append(station["parameters"][db_par]["om_parameter"])
-                db_parameters_list.append(db_par)
 
         request_params = {
             "latitude": lat,
@@ -91,8 +97,8 @@ class OMReader:
             )
             .to_pydatetime()
             .tolist()
-        ) 
-        om_time_past[:] = [val + station["station_timeshift"] for val in om_time_past]        
+        )
+        om_time_past[:] = [val + station["station_timeshift"] for val in om_time_past]
 
         # Вырезать интервал, соответстующий наблюдениям
         try:
@@ -122,10 +128,10 @@ class OMReader:
         ]
 
         # разложить в словарь значения параметров
-        for idx, db_par in enumerate(db_parameters_list):
-            station["parameters"][db_par]["om_data_glob"] = {}
-            station["parameters"][db_par]["om_data_glob"]["past"] = {}
-            station["parameters"][db_par]["om_data_glob"]["past"][time_depth] = (
+        for idx, om_par in enumerate(om_parameters_list):
+            station["om_parameters"][om_par] = {}
+            station["om_parameters"][om_par]["past"] = {}
+            station["om_parameters"][om_par]["past"][time_depth] = (
                 responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
             )
 
@@ -160,7 +166,9 @@ class OMReader:
                 .to_pydatetime()
                 .tolist()
             )
-            om_time_future[:] = [val + station["station_timeshift"] for val in om_time_future]
+            om_time_future[:] = [
+                val + station["station_timeshift"] for val in om_time_future
+            ]
 
             # Вырезать интервал, соответстующий заданному периоду
             try:
@@ -195,11 +203,9 @@ class OMReader:
             ]
 
             # разложить в словарь значения параметров
-            for idx, db_par in enumerate(db_parameters_list):
-                station["parameters"][db_par]["om_data_glob"]["future"] = {}
-                station["parameters"][db_par]["om_data_glob"]["future"][
-                    time_forecast
-                ] = (
+            for idx, om_par in enumerate(om_parameters_list):
+                station["om_parameters"][om_par]["future"] = {}
+                station["om_parameters"][om_par]["future"][time_forecast] = (
                     responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
                 )
 
@@ -209,16 +215,13 @@ class OMReader:
                 station["db_time_past"]["recent"]
             )
         except ValueError:
-            logging.error(
-                "Ошибка получения значение параметра %s для текущего момента времени (recent)!",
-                db_par,
-            )
+            logging.error("Ошибка получения текущего момента времени (recent)!")
             return station
 
-        for db_par in db_parameters_list:
-            station["parameters"][db_par]["om_data_glob"]["past"]["recent"] = station[
-                "parameters"
-            ][db_par]["om_data_glob"]["past"][time_depth][idx]
+        for om_par in om_parameters_list:
+            station["om_parameters"][om_par]["past"]["recent"] = station[
+                "om_parameters"
+            ][om_par]["past"][time_depth][idx]
 
         station["om_time_past"]["recent"] = station["db_time_past"]["recent"]
 

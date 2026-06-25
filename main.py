@@ -111,7 +111,7 @@ def read_stations(stations_file: str) -> list:
                 "no_value": ws_parameters[f"E{par_row_id}"].value,
                 "min_value": ws_parameters[f"F{par_row_id}"].value,
                 "max_value": ws_parameters[f"G{par_row_id}"].value,
-                "om_parameter": [
+                "om_parameters": [
                     tmp.strip()
                     for tmp in str(ws_parameters[f"H{par_row_id}"].value).split(";")
                 ],
