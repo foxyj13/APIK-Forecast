@@ -3,6 +3,7 @@ import logging
 import sys
 
 import numpy as np
+import pandas as pd
 
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge
@@ -86,7 +87,7 @@ class Adjustmenter:
         ml_models["LinearRegression"]["param_grid"] = {
             # Нужно ли рассчитывать свободный коэффициент
             "fit_intercept": [True, False],
-            # Будут ли все веса моедли строго неотрицательными
+            # Будут ли все веса модели строго неотрицательными
             "positive": [True, False],
         }
         ml_models["LinearRegression"]["default_params"] = {}
@@ -535,36 +536,257 @@ class Adjustmenter:
         return data, 100.0 * corr_cnt / len(data)
 
     @staticmethod
-    def _get_train_sets(x_data: list, y_data: list) -> tuple[bool, list, list]:
+    def _get_train_predict_sets_common(
+        target: list,
+        predictor_default_names: list,
+        predictor_cfg_names: list,
+        predictor_data: dict,
+        time_depth: str,
+        time_forecast: str,
+    ) -> dict:
+        """Формирование набора данных для работы со всеми моделями кроме базовых и экспоненциальных"""
 
-        idx_x_none = [idx for idx, val in enumerate(x_data) if val is None]
-        idx_y_none = [idx for idx, val in enumerate(y_data) if val is None]
+        def collect_predictors(
+            list_names: list, dict_data: dict, time_type: str, time_period: str
+        ) -> list[list]:
+            predictor_list = []
+            for pr_name in list_names:
+                predictor_list.append(dict_data[pr_name][time_type][time_period])
 
-        idx_none = set(idx_x_none) | set(idx_y_none)
+            return [list(pr) for pr in zip(*predictor_list)]
 
-        if len(idx_none) > (len(x_data) / 10.0):
-            status = False
-            x_data_no_none = []
-            y_data_no_none = []
+        if predictor_cfg_names:
+            predictor_names = predictor_cfg_names
+        elif predictor_default_names:
+            predictor_names = predictor_default_names
         else:
-            status = True
-            x_data_no_none = [
-                val for idx, val in enumerate(x_data) if idx not in idx_none
+            predictor_names = []
+
+        if predictor_names:
+            predictor_past = collect_predictors(
+                predictor_names, predictor_data, "past", time_depth
+            )
+            predictor_future = collect_predictors(
+                predictor_names, predictor_data, "future", time_forecast
+            )
+
+            idx_target_none = [idx for idx, val in enumerate(target) if val is None]
+            idx_predictor_past_none = [
+                idx for idx, val_list in enumerate(predictor_past) if None in val_list
             ]
-            y_data_no_none = [
-                val for idx, val in enumerate(y_data) if idx not in idx_none
+            idx_predictor_future_none = [
+                idx for idx, val_list in enumerate(predictor_future) if None in val_list
             ]
 
-        return status, x_data_no_none, y_data_no_none
+            idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
+
+            if len(idx_none_past) > (len(target) / 10.0):
+                return {
+                    "status": 0,
+                    "x_train": [],
+                    "y_train": [],
+                    "predictors_past": [],
+                    "idx_predictor_past_none": [],
+                    "predictors_future": [],
+                    "idx_predictor_future_none": [],
+                }
+            else:
+                x_train = [
+                    val
+                    for idx, val in enumerate(predictor_past)
+                    if idx not in idx_none_past
+                ]
+                y_train = [
+                    val for idx, val in enumerate(target) if idx not in idx_none_past
+                ]
+                predictors_past_no_none = [
+                    val
+                    for idx, val in enumerate(predictor_past)
+                    if idx not in idx_predictor_past_none
+                ]
+                predictors_future_no_none = [
+                    val
+                    for idx, val in enumerate(predictor_future)
+                    if idx not in idx_predictor_future_none
+                ]
+
+                return {
+                    "status": 1,
+                    "x_train": x_train,
+                    "y_train": y_train,
+                    "predictors_past": predictors_past_no_none,
+                    "idx_predictor_past_none": idx_predictor_past_none,
+                    "predictors_future": predictors_future_no_none,
+                    "idx_predictor_future_none": idx_predictor_future_none,
+                }
+        else:
+            return {
+                "status": -1,
+                "x_train": [],
+                "y_train": [],
+                "predictors_past": [],
+                "idx_predictor_past_none": [],
+                "predictors_future": [],
+                "idx_predictor_future_none": [],
+            }
+
+    @staticmethod
+    def _get_train_predict_sets_basemodels(
+        target: list,
+        predictor_default_names: list,
+        predictor_cfg_names: list,
+        predictor_data: dict,
+        time_depth: str,
+        time_forecast: str,
+    ) -> dict:
+        """Получение наборов данных для работы с базовыми моделями (может быть только 1 предиктор)"""
+
+        if predictor_cfg_names and len(predictor_cfg_names) == 1:
+            predictor_name = predictor_cfg_names[0]
+        else:
+            if predictor_default_names:
+                if len(predictor_default_names) == 1:
+                    predictor_name = predictor_default_names[0]
+                else:
+                    return {
+                        "status": -2,
+                        "x_train": [],
+                        "y_train": [],
+                        "predictors_past": [],
+                        "idx_predictor_past_none": [],
+                        "predictors_future": [],
+                        "idx_predictor_future_none": [],
+                    }
+            else:
+                return {
+                    "status": -1,
+                    "x_train": [],
+                    "y_train": [],
+                    "predictors_past": [],
+                    "idx_predictor_past_none": [],
+                    "predictors_future": [],
+                    "idx_predictor_future_none": [],
+                }
+
+        predictor_past = [
+            list(pr) for pr in predictor_data[predictor_name]["past"][time_depth]
+        ]
+        predictor_future = [
+            list(pr) for pr in predictor_data[predictor_name]["future"][time_forecast]
+        ]
+
+        idx_target_none = [idx for idx, val in enumerate(target) if val is None]
+        idx_predictor_past_none = [
+            idx for idx, val_list in enumerate(predictor_past) if None in val_list
+        ]
+        idx_predictor_future_none = [
+            idx for idx, val_list in enumerate(predictor_future) if None in val_list
+        ]
+
+        idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
+
+        if len(idx_none_past) > (len(target) / 10.0):
+            return {
+                "status": 0,
+                "x_train": [],
+                "y_train": [],
+                "predictors_past": [],
+                "idx_predictor_past_none": [],
+                "predictors_future": [],
+                "idx_predictor_future_none": [],
+            }
+        else:
+            x_train = [
+                val
+                for idx, val in enumerate(predictor_past)
+                if idx not in idx_none_past
+            ]
+            y_train = [
+                val for idx, val in enumerate(target) if idx not in idx_none_past
+            ]
+            predictors_past_no_none = [
+                val
+                for idx, val in enumerate(predictor_past)
+                if idx not in idx_predictor_past_none
+            ]
+            predictors_future_no_none = [
+                val
+                for idx, val in enumerate(predictor_future)
+                if idx not in idx_predictor_future_none
+            ]
+
+            return {
+                "status": 1,
+                "x_train": x_train,
+                "y_train": y_train,
+                "predictors_past": predictors_past_no_none,
+                "idx_predictor_past_none": idx_predictor_past_none,
+                "predictors_future": predictors_future_no_none,
+                "idx_predictor_future_none": idx_predictor_future_none,
+            }
+
+    @staticmethod
+    def _get_train_predict_sets_expmodels(obs: list) -> dict:
+        """Получение обучающего ряда для экспоненциальных моделей (сам ряд наблюдений является предиктором)"""
+
+        idx_none = [idx for idx, val in enumerate(obs) if val is None]
+
+        if idx_none:
+            if len(idx_none) > len(obs) / 10:
+                return {"status": 0, "train": []}
+            else:
+                # Заполнить None
+                obs_series = pd.Series(obs, dtype=float)
+                filled_obs_series = (
+                    obs_series.interpolate(method="linear").ffill().bfill()
+                )
+                return {"status": 1, "train": filled_obs_series.tolist()}
+        else:
+            return {"status": 1, "train": obs}
+
+    def _get_train_predict_sets(
+        self,
+        target: list,
+        predictor_default_names: list,
+        predictor_cfg_names: list,
+        predictor_data: dict,
+    ) -> dict:
+        # status = 1: все ОК
+        # status = 0: пропусктов > 10 %
+        # status = -1: не указаны предикторы
+        # status = -2: предикторов более, чем 1
+
+        common_models = self._get_train_predict_sets_common(
+            target,
+            predictor_default_names,
+            predictor_cfg_names,
+            predictor_data,
+            self.time_depth,
+            self.time_forecast,
+        )
+
+        base_models = self._get_train_predict_sets_basemodels(
+            target,
+            predictor_default_names,
+            predictor_cfg_names,
+            predictor_data,
+            self.time_depth,
+            self.time_forecast,
+        )
+
+        exp_models = self._get_train_predict_sets_expmodels(target)
+
+        return {"common": common_models, "base": base_models, "exp": exp_models}
 
     def _get_ml_forecast(
         self,
         model_cfg,  # конкретная модель или auto (т.е. перебор по всем доступным для построения наилучшей)
         # или autoset и дальше указать model-set=[..., ..., ...] (перебор по моделям только из этого набора)
-        x_train: list,
+        x_train: list[list],
         y_train: list,
-        x_past_predict: list,
-        x_future_predict: list,
+        y_train_idx_none: list,
+        x_past_predict: list[list],
+        x_future_predict: list[list],
     ) -> tuple[list, list]:
 
         model_set = model_cfg["model-set"]
@@ -617,46 +839,54 @@ class Adjustmenter:
                     param_grid = self.ml_models[model_name]["param_grid"]
 
                     model = GridSearchCV(model_cls(), param_grid, cv=5)
-                    model.fit(np.array(x_train).reshape(-1, 1), y_train)
+                    model.fit(np.array(x_train), y_train)
 
                     # later out model.best_params_ to log and verbose-file
                     result_predict[model_idx] = {}
 
-                    y_test = model.best_estimator_.predict(
-                        np.array(x_train).reshape(-1, 1)
-                    )
+                    y_test = model.best_estimator_.predict(np.array(x_train))
                     result_predict[model_idx]["r2_score"] = r2_score(y_train, y_test)
 
                     result_predict[model_idx]["y_past_predict"] = (
-                        model.best_estimator_.predict(
-                            np.array(x_past_predict).reshape(-1, 1)
-                        )
+                        model.best_estimator_.predict(np.array(x_past_predict))
                     )
                     result_predict[model_idx]["y_future_predict"] = (
-                        model.best_estimator_.predict(
-                            np.array(x_future_predict).reshape(-1, 1)
-                        )
+                        model.best_estimator_.predict(np.array(x_future_predict))
                     )
                 else:
-                    if model_params_user:
-                        model = model_cls(**model_params_user)
+                    if model_name in {
+                        "SimpleExpSmoothing",
+                        "ExponentialSmoothing",
+                        "Holt",
+                    }:
+                        # Вернуть в ряд y_train пропуски на места y_train_idx_none
+                        # Восстановить значения вместо пропусков в ряду y_train
+                        # Сделать расчет моделью
+                        # Если такая модель в наборе, то результат - только среднее между результатами
+                        # И прогноз возможен только вперед. Прогноз назад здесь - это сами наблюдения (восстановленный ряд)
+                        ...
                     else:
-                        model = model_cls()
+                        if model_params_user:
+                            model = model_cls(**model_params_user)
+                        else:
+                            model = model_cls()
 
-                    model.fit(np.array(x_train).reshape(-1, 1), y_train)
+                        model.fit(np.array(x_train), y_train)
 
-                    # later out model.params_ to log and verbose-file
-                    result_predict[model_idx] = {}
+                        # later out model.params_ to log and verbose-file
+                        result_predict[model_idx] = {}
 
-                    y_test = model.predict(np.array(x_train).reshape(-1, 1))
-                    result_predict[model_idx]["r2_score"] = r2_score(y_train, y_test)
+                        y_test = model.predict(np.array(x_train))
+                        result_predict[model_idx]["r2_score"] = r2_score(
+                            y_train, y_test
+                        )
 
-                    result_predict[model_idx]["y_past_predict"] = model.predict(
-                        np.array(x_past_predict).reshape(-1, 1)
-                    )
-                    result_predict[model_idx]["y_future_predict"] = model.predict(
-                        np.array(x_future_predict).reshape(-1, 1)
-                    )
+                        result_predict[model_idx]["y_past_predict"] = model.predict(
+                            np.array(x_past_predict)
+                        )
+                        result_predict[model_idx]["y_future_predict"] = model.predict(
+                            np.array(x_future_predict)
+                        )
             except Exception as e:
                 logging.error(
                     "Ошибка при построении прогноза с помощью модели машинного обучения %s: %s",
@@ -710,43 +940,6 @@ class Adjustmenter:
 
         return list(y_past_predict), list(y_future_predict)
 
-    # mod_local_past, mod_local_future = self._get_local_forecast(
-    #                    par_short_name, x_train, y_train, mod_data_past, mod_data_future
-    #                )
-    def _get_local_forecast(
-        self,
-        par_short_name: str,
-        x_train: list,
-        y_train: list,
-        x_past_predict: list,
-        x_future_predict: list,
-    ) -> tuple[list, list]:
-
-        if par_short_name in self.cfg_sections:
-            # use specific ml-model
-            logging.info(
-                "Установка специальных настроек модели машинного обучения для параметра %s",
-                par_short_name,
-            )
-            par_model_key = par_short_name
-        else:
-            # use default ml-model (under "default" key in config_ml.ini)
-            logging.info(
-                "Установка модели машинного обучения по умолчанию ([default]) для параметра %s",
-                par_short_name,
-            )
-            par_model_key = "default"
-
-        y_past_predict, y_future_predict = self._get_ml_forecast(
-            self.config[par_model_key],
-            x_train,
-            y_train,
-            x_past_predict,
-            x_future_predict,
-        )
-
-        return y_past_predict, y_future_predict
-
     def get_local_forecast(self, station: dict) -> dict:
         logging.info(
             "Формирование локального прогноза для станции %s (%s)",
@@ -756,12 +949,17 @@ class Adjustmenter:
 
         # self.obs_time_past = station["db_time_past"][self.time_depth]
         mod_time_past = station["om_time_past"][self.time_depth]
+        # mod_time_future = station["om_time_future"][self.time_forecast]
+
         mod_recent = station["om_time_past"]["recent"]
         idx_recent = mod_time_past.index(mod_recent)
-        # self.mod_time_future = station["om_time_future"][self.time_forecast]
 
         for par_short_name, parameter in station["parameters"].items():
-            if "om_data_glob" in parameter:
+            if (
+                parameter["om_parameters"]
+                and parameter["om_parameters"][0] is not None
+                and parameter["om_parameters"][0].lower() != "none"
+            ):
                 logging.info(
                     "Получение локального прогноза для параметра %s (код: %s)",
                     parameter["name"],
@@ -777,86 +975,89 @@ class Adjustmenter:
                 parameter["om_data_local_no_corr"]["future"] = {}
 
                 obs_data = parameter["data"][self.time_depth]
-                mod_data_past = parameter["om_data_glob"]["past"][self.time_depth]
-                mod_data_future = parameter["om_data_glob"]["future"][
-                    self.time_forecast
-                ]
+                predictors_default = parameter["om_parameters"]
 
-                status, x_train, y_train = self._get_train_sets(mod_data_past, obs_data)
-
-                if status:
-                    # TODO:
-                    # 1. Проверить на наличие None списков данных mod_data_past, mod_data_future.
-                    # Если None есть, то их исключить, но запомнить их позиции для последующего восстановления (т.е. вставки None в эти позиции в прогнозе)
-                    mod_local_past, mod_local_future = self._get_local_forecast(
-                        par_short_name, x_train, y_train, mod_data_past, mod_data_future
-                    )
-
-                    parameter["om_data_local_no_corr"]["past"][
-                        self.time_depth
-                    ] = mod_local_past
-
-                    parameter["om_data_local_no_corr"]["future"][
-                        self.time_forecast
-                    ] = mod_local_future
-
-                    mod_local_past_corr, corr_past_percent = (
-                        self._check_corr_data_bounds(
-                            data=mod_local_past,
-                            min_val=parameter["min_value"],
-                            max_val=parameter["max_value"],
-                        )
-                    )
-                    parameter["om_data_local"]["past"][
-                        self.time_depth
-                    ] = mod_local_past_corr
-
-                    mod_local_future_corr, corr_future_percent = (
-                        self._check_corr_data_bounds(
-                            data=mod_local_future,
-                            min_val=parameter["min_value"],
-                            max_val=parameter["max_value"],
-                        )
-                    )
-                    parameter["om_data_local"]["future"][
-                        self.time_forecast
-                    ] = mod_local_future_corr
-
-                    if idx_recent:
-                        parameter["om_data_local_no_corr"]["past"]["recent"] = (
-                            mod_local_past[idx_recent]
-                        )
-                        parameter["om_data_local"]["past"]["recent"] = (
-                            mod_local_past_corr[idx_recent]
-                        )
-                    else:
-                        parameter["om_data_local_no_corr"]["past"]["recent"] = (
-                            mod_local_past[-1]
-                        )
-                        parameter["om_data_local"]["past"]["recent"] = (
-                            mod_local_past_corr[-1]
-                        )
-
-                    logging.info(
-                        "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде и %.2f %% значений прогноза в будущее",
-                        corr_past_percent,
-                        corr_future_percent,
-                    )
-                    # TODO: если включен verbose, то записать в verbose-файл в формате JSON информацию о построенных прогнозах
-                    # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
-                    # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
-
+                if par_short_name in self.cfg_sections:
+                    par_key = par_short_name
                 else:
-                    logging.error(
-                        "Пропуск получения локального прогноза: большие пропуски в данных (> 10 %)"
-                    )
+                    par_key = "default"
 
-                    parameter["om_data_local"]["past"][self.time_depth] = [
-                        None for _ in mod_data_past
+                predictors_cfg = self.config[par_key]["predictor-set"]
+
+                train_predict_sets = self._get_train_predict_sets(
+                    obs_data,
+                    predictors_default,
+                    predictors_cfg,
+                    station["om_parameters"],
+                )
+
+                y_past_predict, y_future_predict = self._get_ml_forecast(
+                    par_key, train_predict_sets
+                )
+
+                parameter["om_data_local_no_corr"]["past"][
+                    self.time_depth
+                ] = mod_local_past
+
+                parameter["om_data_local_no_corr"]["future"][
+                    self.time_forecast
+                ] = mod_local_future
+
+                mod_local_past_corr, corr_past_percent = self._check_corr_data_bounds(
+                    data=mod_local_past,
+                    min_val=parameter["min_value"],
+                    max_val=parameter["max_value"],
+                )
+                parameter["om_data_local"]["past"][
+                    self.time_depth
+                ] = mod_local_past_corr
+
+                mod_local_future_corr, corr_future_percent = (
+                    self._check_corr_data_bounds(
+                        data=mod_local_future,
+                        min_val=parameter["min_value"],
+                        max_val=parameter["max_value"],
+                    )
+                )
+                parameter["om_data_local"]["future"][
+                    self.time_forecast
+                ] = mod_local_future_corr
+
+                if idx_recent:
+                    parameter["om_data_local_no_corr"]["past"]["recent"] = (
+                        mod_local_past[idx_recent]
+                    )
+                    parameter["om_data_local"]["past"]["recent"] = mod_local_past_corr[
+                        idx_recent
                     ]
-                    parameter["om_data_local"]["future"][self.time_forecast] = [
-                        None for _ in mod_data_past
+                else:
+                    parameter["om_data_local_no_corr"]["past"]["recent"] = (
+                        mod_local_past[-1]
+                    )
+                    parameter["om_data_local"]["past"]["recent"] = mod_local_past_corr[
+                        -1
                     ]
+
+                logging.info(
+                    "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде и %.2f %% значений прогноза в будущее",
+                    corr_past_percent,
+                    corr_future_percent,
+                )
+                # TODO: если включен verbose, то записать в verbose-файл в формате JSON информацию о построенных прогнозах
+                # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
+                # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
+
+                # else:
+                #     logging.error(
+                #         "Пропуск получения локального прогноза: большие пропуски в данных (> 10 %)"
+                #     )
+
+                #     parameter["om_data_local"]["past"][self.time_depth] = [
+                #         None for _ in mod_data_past
+                #     ]
+                #     parameter["om_data_local"]["future"][self.time_forecast] = [
+                #         None for _ in mod_data_past
+                #     ]
             else:
                 logging.info(
                     "Невозможно получить локальный прогноз для параметра %s (код: %s), т.к. отсутствуют данные глобального прогноза",
