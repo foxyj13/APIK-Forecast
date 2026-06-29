@@ -53,10 +53,11 @@ class OMReader:
         om_parameters_list = set()
         for _, par_info in station["parameters"].items():
             om_parameters_list = om_parameters_list | set(par_info["om_parameters"])
+
         om_parameters_list = [
             par_name
             for par_name in list(om_parameters_list)
-            if (par_name is not None) and (par_name != "None")
+            if (par_name is not None) and (par_name.lower() != "none")
         ]
 
         # Сформировать json для получения данных
