@@ -21,7 +21,7 @@ from statsmodels.tsa.holtwinters import Holt
 from baselinmodels import BiasModel
 from baselinmodels import ScalingModel
 
-from sklearn.metrics import r2_score
+from sklearn.metrics import root_mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import GridSearchCV
 
 
@@ -251,7 +251,7 @@ class Adjustmenter:
         #     # Фиксируем суточный цикл (при желании можно протестировать недельную сезонность - 168 часав, но она может не работать из-за недостатка данных для обучения модели)
         #     "seasonal_periods": [24],
         # }
-        ml_models["ExponentialSmoothing"]["default_params"] = {}
+        ml_models["ExponentialSmoothing"]["default_params"] = {"seasonal_periods": 24}
 
         ml_models["Holt"] = {}
         ml_models["Holt"]["cls"] = Holt
@@ -668,19 +668,15 @@ class Adjustmenter:
                     "idx_predictor_future_none": [],
                 }
 
-        predictor_past = [
-            list(pr) for pr in predictor_data[predictor_name]["past"][time_depth]
-        ]
-        predictor_future = [
-            list(pr) for pr in predictor_data[predictor_name]["future"][time_forecast]
-        ]
+        predictor_past = predictor_data[predictor_name]["past"][time_depth]
+        predictor_future = predictor_data[predictor_name]["future"][time_forecast]
 
         idx_target_none = [idx for idx, val in enumerate(target) if val is None]
         idx_predictor_past_none = [
-            idx for idx, val_list in enumerate(predictor_past) if None in val_list
+            idx for idx, val in enumerate(predictor_past) if val is None
         ]
         idx_predictor_future_none = [
-            idx for idx, val_list in enumerate(predictor_future) if None in val_list
+            idx for idx, val in enumerate(predictor_future) if val is None
         ]
 
         idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
@@ -780,20 +776,29 @@ class Adjustmenter:
 
     def _get_ml_forecast(
         self,
-        model_cfg,  # конкретная модель или auto (т.е. перебор по всем доступным для построения наилучшей)
+        parameter_key: str,
+        train_predict_sets: dict,
+        # model_cfg,  # конкретная модель или auto (т.е. перебор по всем доступным для построения наилучшей)
         # или autoset и дальше указать model-set=[..., ..., ...] (перебор по моделям только из этого набора)
-        x_train: list[list],
-        y_train: list,
-        y_train_idx_none: list,
-        x_past_predict: list[list],
-        x_future_predict: list[list],
-    ) -> tuple[list, list]:
+        # x_train: list[list],
+        # y_train: list,
+        # y_train_idx_none: list,
+        # x_past_predict: list[list],
+        # x_future_predict: list[list],
+    ):  # -> tuple[list, list]:
+
+        model_cfg = self.config[parameter_key]
 
         model_set = model_cfg["model-set"]
         model_params_user = model_cfg["model-params-user"]
         grid_search_flag = model_cfg["grid-search"]
         get_result_way = model_cfg["get-result"]
+        if "best-result-metrics" in model_cfg:
+            best_result_metrics = model_cfg["best-result-metrics"].lower()
+        else:
+            best_result_metrics = "r2"
 
+        # Информирование об используемом наборе моделей
         if model_cfg["model"] == "auto":
             logging.info(
                 "Автоматический перебор всех доступных моделей машинного обучения для получения прогноза: %s",
@@ -810,6 +815,7 @@ class Adjustmenter:
                 model_set,
             )
 
+        # Информирование об использовании GridSearchCV и пользовательских гиперпараметрах
         if grid_search_flag:
             logging.info(
                 "Использование GridSearchCV для подбора наилучшей конфигурации гиперпараметров"
@@ -825,6 +831,7 @@ class Adjustmenter:
                     "Использование стандартных гиперпараметров для выбранных моделей машинного обучения"
                 )
 
+        # Далее: расчетная часть
         result_predict = {}
         for model_idx, model_name in enumerate(model_set):
             logging.info(
@@ -836,48 +843,119 @@ class Adjustmenter:
                 model_cls = self.ml_models[model_name]["cls"]
 
                 if grid_search_flag and self.ml_models[model_name]["param_grid"]:
-                    param_grid = self.ml_models[model_name]["param_grid"]
+                    if model_name in self.exp_models | self.base_models:
+                        logging.warning(
+                            "Модель %s относится к классу базовых или экспеоненциальных, к которым не может быть применен GridSearchCV. Пропускаю расчет на этой модели",
+                            model_name,
+                        )
+                    else:
+                        param_grid = self.ml_models[model_name]["param_grid"]
 
-                    model = GridSearchCV(model_cls(), param_grid, cv=5)
-                    model.fit(np.array(x_train), y_train)
+                        x_train = train_predict_sets["common"]["x_train"]
+                        y_train = train_predict_sets["common"]["y_train"]
+                        x_past_predict = train_predict_sets["common"]["predictors_past"]
+                        x_future_predict = train_predict_sets["common"][
+                            "predictors_future"
+                        ]
 
-                    # later out model.best_params_ to log and verbose-file
+                        model = GridSearchCV(model_cls(), param_grid, cv=5)
+                        model.fit(np.array(x_train), y_train)
+
+                        # TODO: later out model.best_params_ to log and verbose-file
+                        result_predict[model_idx] = {}
+
+                        y_test = model.best_estimator_.predict(np.array(x_train))
+                        # !!! TODO:
+                        # Диагностический вывод будет всех метрик
+                        result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
+                        result_predict[model_idx]["rmse"] = root_mean_squared_error(
+                            y_train, y_test
+                        )
+                        result_predict[model_idx]["mae"] = mean_absolute_error(
+                            y_train, y_test
+                        )
+
+                        result_predict[model_idx]["y_past_predict"] = (
+                            model.best_estimator_.predict(np.array(x_past_predict))
+                        )
+                        result_predict[model_idx]["y_future_predict"] = (
+                            model.best_estimator_.predict(np.array(x_future_predict))
+                        )
+                else:
                     result_predict[model_idx] = {}
 
-                    y_test = model.best_estimator_.predict(np.array(x_train))
-                    result_predict[model_idx]["r2_score"] = r2_score(y_train, y_test)
+                    if model_name in self.exp_models:
+                        x_train = train_predict_sets["exp"]["train"]
 
-                    result_predict[model_idx]["y_past_predict"] = (
-                        model.best_estimator_.predict(np.array(x_past_predict))
-                    )
-                    result_predict[model_idx]["y_future_predict"] = (
-                        model.best_estimator_.predict(np.array(x_future_predict))
-                    )
-                else:
-                    if model_name in {
-                        "SimpleExpSmoothing",
-                        "ExponentialSmoothing",
-                        "Holt",
-                    }:
-                        # Вернуть в ряд y_train пропуски на места y_train_idx_none
-                        # Восстановить значения вместо пропусков в ряду y_train
-                        # Сделать расчет моделью
-                        # Если такая модель в наборе, то результат - только среднее между результатами
-                        # И прогноз возможен только вперед. Прогноз назад здесь - это сами наблюдения (восстановленный ряд)
-                        ...
-                    else:
                         if model_params_user:
-                            model = model_cls(**model_params_user)
+                            model = model_cls(
+                                x_train,
+                                **self.ml_models[model_name]["default_params"],
+                                **model_params_user
+                            ).fit()
                         else:
+                            model = model_cls(
+                                x_train, **self.ml_models[model_name]["default_params"]
+                            ).fit()
+
+                        x_test = model.fittedvalues
+
+                        # TODO: later out model.params to log and verbose-file
+
+                        # !!! TODO:
+                        # Диагностический вывод будет всех метрик
+                        result_predict[model_idx]["r2"] = r2_score(x_train, x_test)
+                        result_predict[model_idx]["rmse"] = root_mean_squared_error(
+                            x_train, x_test
+                        )
+                        result_predict[model_idx]["mae"] = mean_absolute_error(
+                            x_train, x_test
+                        )
+
+                        result_predict[model_idx]["y_past_predict"] = x_test
+                        result_predict[model_idx]["y_future_predict"] = model.forecast(
+                            steps=int(self.time_forecast[:-1])
+                        )
+
+                    else:
+                        if model_name in self.base_models:
                             model = model_cls()
+
+                            x_train = train_predict_sets["base"]["x_train"]
+                            y_train = train_predict_sets["base"]["y_train"]
+                            x_past_predict = train_predict_sets["base"][
+                                "predictors_past"
+                            ]
+                            x_future_predict = train_predict_sets["base"][
+                                "predictors_future"
+                            ]
+                        else:
+                            if model_params_user:
+                                model = model_cls(**model_params_user)
+                            else:
+                                model = model_cls()
+
+                            x_train = train_predict_sets["common"]["x_train"]
+                            y_train = train_predict_sets["common"]["y_train"]
+                            x_past_predict = train_predict_sets["common"][
+                                "predictors_past"
+                            ]
+                            x_future_predict = train_predict_sets["common"][
+                                "predictors_future"
+                            ]
 
                         model.fit(np.array(x_train), y_train)
 
-                        # later out model.params_ to log and verbose-file
-                        result_predict[model_idx] = {}
+                        # TODO: later out model.params_ to log and verbose-file
 
                         y_test = model.predict(np.array(x_train))
-                        result_predict[model_idx]["r2_score"] = r2_score(
+                        # !!! TODO:
+                        # Диагностический вывод будет всех метрик
+                        result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
+                        result_predict[model_idx]["rmse"] = root_mean_squared_error(
+                            y_train, y_test
+                        )
+                        result_predict[model_idx]["mae"] = mean_absolute_error(
                             y_train, y_test
                         )
 
@@ -902,8 +980,10 @@ class Adjustmenter:
                 y_future_predict = result_predict[0]["y_future_predict"]
             else:
                 if get_result_way == "best":
+                    # См. по какой метрике лучшая (best_result_metrics). М.б. другая из self.inner_metrics
                     best_model_idx = max(
-                        result_predict, key=lambda idx: result_predict[idx]["r2_score"]
+                        result_predict,
+                        key=lambda idx: result_predict[idx][best_result_metrics],
                     )
                     y_past_predict = result_predict[best_model_idx]["y_past_predict"]
                     y_future_predict = result_predict[best_model_idx][
@@ -991,7 +1071,7 @@ class Adjustmenter:
                     station["om_parameters"],
                 )
 
-                y_past_predict, y_future_predict = self._get_ml_forecast(
+                mod_local_past, mod_local_future = self._get_ml_forecast(
                     par_key, train_predict_sets
                 )
 
@@ -1047,17 +1127,6 @@ class Adjustmenter:
                 # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
                 # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
 
-                # else:
-                #     logging.error(
-                #         "Пропуск получения локального прогноза: большие пропуски в данных (> 10 %)"
-                #     )
-
-                #     parameter["om_data_local"]["past"][self.time_depth] = [
-                #         None for _ in mod_data_past
-                #     ]
-                #     parameter["om_data_local"]["future"][self.time_forecast] = [
-                #         None for _ in mod_data_past
-                #     ]
             else:
                 logging.info(
                     "Невозможно получить локальный прогноз для параметра %s (код: %s), т.к. отсутствуют данные глобального прогноза",
