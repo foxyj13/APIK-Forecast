@@ -1,5 +1,7 @@
 """Базовые модели для сравнения с ML-моделями."""
 
+import numpy as np
+
 
 class BiasModel:
     """Модель смещения (y = x + b)"""
@@ -7,11 +9,11 @@ class BiasModel:
     def __init__(self):
         self.bias_ = 0.0
 
-    def fit(self, X, y):
-        self.bias_ = (y - X).mean()
+    def fit(self, x_arr, y_arr):
+        self.bias_ = (np.array(y_arr) - np.array(x_arr)).mean()
 
-    def predict(self, X):
-        return X + self.bias_
+    def predict(self, x_arr):
+        return list(np.array(x_arr) + self.bias_)
 
 
 class ScalingModel:
@@ -20,11 +22,11 @@ class ScalingModel:
     def __init__(self):
         self.scale_ = 1.0
 
-    def fit(self, X, y):
-        self.scale_ = (y / X).mean()
+    def fit(self, x_arr, y_arr):
+        self.scale_ = (np.array(y_arr) / np.array(x_arr)).mean()
 
-    def predict(self, X):
-        return X * self.scale_
+    def predict(self, x_arr):
+        return list(np.array(x_arr) * self.scale_)
 
 
 # class NaiveMean:
