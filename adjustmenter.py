@@ -538,6 +538,7 @@ class Adjustmenter:
     @staticmethod
     def _get_train_predict_sets_common(
         target: list,
+        idx_target_none: list,
         predictor_default_names: list,
         predictor_cfg_names: list,
         predictor_data: dict,
@@ -555,9 +556,23 @@ class Adjustmenter:
 
             return [list(pr) for pr in zip(*predictor_list)]
 
-        if predictor_cfg_names:
+        def check_names(some_names: list, all_names: list) -> bool:
+            wrong_some_names = set(some_names) - set(all_names)
+            if len(wrong_some_names) == 0:
+                return True
+            else:
+                logging.error(
+                    "Ошибка: некорректно заданы имена предикторов %s", wrong_some_names
+                )
+                return False
+
+        if predictor_cfg_names and check_names(
+            predictor_cfg_names, list(predictor_data.keys())
+        ):
             predictor_names = predictor_cfg_names
-        elif predictor_default_names:
+        elif predictor_default_names and check_names(
+            predictor_default_names, list(predictor_data.keys())
+        ):
             predictor_names = predictor_default_names
         else:
             predictor_names = []
@@ -570,7 +585,6 @@ class Adjustmenter:
                 predictor_names, predictor_data, "future", time_forecast
             )
 
-            idx_target_none = [idx for idx, val in enumerate(target) if val is None]
             idx_predictor_past_none = [
                 idx for idx, val_list in enumerate(predictor_past) if None in val_list
             ]
@@ -633,6 +647,7 @@ class Adjustmenter:
     @staticmethod
     def _get_train_predict_sets_basemodels(
         target: list,
+        idx_target_none: list,
         predictor_default_names: list,
         predictor_cfg_names: list,
         predictor_data: dict,
@@ -671,7 +686,6 @@ class Adjustmenter:
         predictor_past = predictor_data[predictor_name]["past"][time_depth]
         predictor_future = predictor_data[predictor_name]["future"][time_forecast]
 
-        idx_target_none = [idx for idx, val in enumerate(target) if val is None]
         idx_predictor_past_none = [
             idx for idx, val in enumerate(predictor_past) if val is None
         ]
@@ -722,21 +736,14 @@ class Adjustmenter:
             }
 
     @staticmethod
-    def _get_train_predict_sets_expmodels(obs: list) -> dict:
+    def _get_train_predict_sets_expmodels(obs: list, idx_none: list) -> dict:
         """Получение обучающего ряда для экспоненциальных моделей (сам ряд наблюдений является предиктором)"""
 
-        idx_none = [idx for idx, val in enumerate(obs) if val is None]
-
         if idx_none:
-            if len(idx_none) > len(obs) / 10:
-                return {"status": 0, "train": []}
-            else:
-                # Заполнить None
-                obs_series = pd.Series(obs, dtype=float)
-                filled_obs_series = (
-                    obs_series.interpolate(method="linear").ffill().bfill()
-                )
-                return {"status": 1, "train": filled_obs_series.tolist()}
+            # Заполнить None
+            obs_series = pd.Series(obs, dtype=float)
+            filled_obs_series = obs_series.interpolate(method="linear").ffill().bfill()
+            return {"status": 1, "train": filled_obs_series.tolist()}
         else:
             return {"status": 1, "train": obs}
 
@@ -752,40 +759,88 @@ class Adjustmenter:
         # status = -1: не указаны предикторы
         # status = -2: предикторов более, чем 1
 
-        common_models = self._get_train_predict_sets_common(
-            target,
-            predictor_default_names,
-            predictor_cfg_names,
-            predictor_data,
-            self.time_depth,
-            self.time_forecast,
-        )
+        idx_target_none = [idx for idx, val in enumerate(target) if val is None]
 
-        base_models = self._get_train_predict_sets_basemodels(
-            target,
-            predictor_default_names,
-            predictor_cfg_names,
-            predictor_data,
-            self.time_depth,
-            self.time_forecast,
-        )
+        if idx_target_none and len(idx_target_none) > len(target) / 10:
+            common_models_set = {
+                "status": 0,
+                "x_train": [],
+                "y_train": [],
+                "predictors_past": [],
+                "idx_predictor_past_none": [],
+                "predictors_future": [],
+                "idx_predictor_future_none": [],
+            }
+            base_models_set = {
+                "status": 0,
+                "x_train": [],
+                "y_train": [],
+                "predictors_past": [],
+                "idx_predictor_past_none": [],
+                "predictors_future": [],
+                "idx_predictor_future_none": [],
+            }
+            exp_models_set = {"status": 0, "train": []}
 
-        exp_models = self._get_train_predict_sets_expmodels(target)
+            prepared_sets = {
+                "common": common_models_set,
+                "base": base_models_set,
+                "exp": exp_models_set,
+            }
+        else:
+            common_models = self._get_train_predict_sets_common(
+                target,
+                idx_target_none,
+                predictor_default_names,
+                predictor_cfg_names,
+                predictor_data,
+                self.time_depth,
+                self.time_forecast,
+            )
 
-        return {"common": common_models, "base": base_models, "exp": exp_models}
+            base_models = self._get_train_predict_sets_basemodels(
+                target,
+                idx_target_none,
+                predictor_default_names,
+                predictor_cfg_names,
+                predictor_data,
+                self.time_depth,
+                self.time_forecast,
+            )
+
+            exp_models = self._get_train_predict_sets_expmodels(target, idx_target_none)
+
+            prepared_sets = {
+                "common": common_models,
+                "base": base_models,
+                "exp": exp_models,
+            }
+
+        return prepared_sets
 
     def _get_ml_forecast(
         self,
         parameter_key: str,
         train_predict_sets: dict,
-        # model_cfg,  # конкретная модель или auto (т.е. перебор по всем доступным для построения наилучшей)
-        # или autoset и дальше указать model-set=[..., ..., ...] (перебор по моделям только из этого набора)
-        # x_train: list[list],
-        # y_train: list,
-        # y_train_idx_none: list,
-        # x_past_predict: list[list],
-        # x_future_predict: list[list],
-    ):  # -> tuple[list, list]:
+    ) -> tuple[list, list]:
+
+        def logging_err_status(model_type: str) -> None:
+            if train_predict_sets[model_type]["status"] == 0:
+                logging.error(
+                    "Слишком много пропусков в обучающих данных (более 10 %). Пропуск обучения модели. Пропуск расчета прогноза на ней."
+                )
+            elif train_predict_sets[model_type]["status"] == -1:
+                logging.error(
+                    "Не задано ни одного предиктора. Обучение модели невозможно. Пропуск расчета прогноза на этой модели."
+                )
+            elif train_predict_sets[model_type]["status"] == -2:
+                logging.error(
+                    "Задано более 1 предиктора (но допустим только 1). Пропуск обучения модели. Пропуск расчета прогноза на этой модели."
+                )
+            else:
+                logging.error(
+                    "Некорректный обучающий набор данных. Пропуск обучения модели. Пропуск расчета прогноза на этой модели."
+                )
 
         model_cfg = self.config[parameter_key]
 
@@ -849,122 +904,139 @@ class Adjustmenter:
                             model_name,
                         )
                     else:
-                        param_grid = self.ml_models[model_name]["param_grid"]
+                        model_type = "common"
 
-                        x_train = train_predict_sets["common"]["x_train"]
-                        y_train = train_predict_sets["common"]["y_train"]
-                        x_past_predict = train_predict_sets["common"]["predictors_past"]
-                        x_future_predict = train_predict_sets["common"][
-                            "predictors_future"
-                        ]
+                        if train_predict_sets[model_type]["status"]:  # т.е. status == 1
+                            x_train = train_predict_sets[model_type]["x_train"]
+                            y_train = train_predict_sets[model_type]["y_train"]
+                            x_past_predict = train_predict_sets[model_type][
+                                "predictors_past"
+                            ]
+                            x_future_predict = train_predict_sets[model_type][
+                                "predictors_future"
+                            ]
 
-                        model = GridSearchCV(model_cls(), param_grid, cv=5)
-                        model.fit(np.array(x_train), y_train)
+                            param_grid = self.ml_models[model_name]["param_grid"]
 
-                        # TODO: later out model.best_params_ to log and verbose-file
-                        result_predict[model_idx] = {}
+                            model = GridSearchCV(model_cls(), param_grid, cv=5)
+                            model.fit(np.array(x_train), y_train)
 
-                        y_test = model.best_estimator_.predict(np.array(x_train))
-                        # !!! TODO:
-                        # Диагностический вывод будет всех метрик
-                        result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
-                        result_predict[model_idx]["rmse"] = root_mean_squared_error(
-                            y_train, y_test
-                        )
-                        result_predict[model_idx]["mae"] = mean_absolute_error(
-                            y_train, y_test
-                        )
+                            # TODO: later out model.best_params_ to log and verbose-file
+                            result_predict[model_idx] = {}
 
-                        result_predict[model_idx]["y_past_predict"] = (
-                            model.best_estimator_.predict(np.array(x_past_predict))
-                        )
-                        result_predict[model_idx]["y_future_predict"] = (
-                            model.best_estimator_.predict(np.array(x_future_predict))
-                        )
+                            y_test = model.best_estimator_.predict(np.array(x_train))
+                            # !!! TODO:
+                            # Диагностический вывод будет всех метрик
+                            result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
+                            result_predict[model_idx]["rmse"] = root_mean_squared_error(
+                                y_train, y_test
+                            )
+                            result_predict[model_idx]["mae"] = mean_absolute_error(
+                                y_train, y_test
+                            )
+
+                            result_predict[model_idx]["y_past_predict"] = (
+                                model.best_estimator_.predict(np.array(x_past_predict))
+                            )
+                            result_predict[model_idx]["y_future_predict"] = (
+                                model.best_estimator_.predict(
+                                    np.array(x_future_predict)
+                                )
+                            )
+                        else:
+                            logging_err_status(model_type)
                 else:
                     result_predict[model_idx] = {}
 
                     if model_name in self.exp_models:
-                        x_train = train_predict_sets["exp"]["train"]
+                        model_type = "exp"
+                        if train_predict_sets[model_type]["status"]:  # т.е. status == 1
+                            x_train = train_predict_sets[model_type]["train"]
 
-                        if model_params_user:
-                            model = model_cls(
-                                x_train,
-                                **self.ml_models[model_name]["default_params"],
-                                **model_params_user
-                            ).fit()
+                            if model_params_user:
+                                model = model_cls(
+                                    x_train,
+                                    **self.ml_models[model_name]["default_params"],
+                                    **model_params_user
+                                ).fit()
+                            else:
+                                model = model_cls(
+                                    x_train,
+                                    **self.ml_models[model_name]["default_params"]
+                                ).fit()
+
+                            x_test = model.fittedvalues
+
+                            # TODO: later out model.params to log and verbose-file
+
+                            # !!! TODO:
+                            # Диагностический вывод будет всех метрик
+                            result_predict[model_idx]["r2"] = r2_score(x_train, x_test)
+                            result_predict[model_idx]["rmse"] = root_mean_squared_error(
+                                x_train, x_test
+                            )
+                            result_predict[model_idx]["mae"] = mean_absolute_error(
+                                x_train, x_test
+                            )
+
+                            result_predict[model_idx]["y_past_predict"] = x_test
+                            result_predict[model_idx]["y_future_predict"] = (
+                                model.forecast(steps=int(self.time_forecast[:-1]))
+                            )
                         else:
-                            model = model_cls(
-                                x_train, **self.ml_models[model_name]["default_params"]
-                            ).fit()
-
-                        x_test = model.fittedvalues
-
-                        # TODO: later out model.params to log and verbose-file
-
-                        # !!! TODO:
-                        # Диагностический вывод будет всех метрик
-                        result_predict[model_idx]["r2"] = r2_score(x_train, x_test)
-                        result_predict[model_idx]["rmse"] = root_mean_squared_error(
-                            x_train, x_test
-                        )
-                        result_predict[model_idx]["mae"] = mean_absolute_error(
-                            x_train, x_test
-                        )
-
-                        result_predict[model_idx]["y_past_predict"] = x_test
-                        result_predict[model_idx]["y_future_predict"] = model.forecast(
-                            steps=int(self.time_forecast[:-1])
-                        )
+                            logging_err_status(model_type)
 
                     else:
                         if model_name in self.base_models:
+                            model_type = "base"
                             model = model_cls()
-
-                            x_train = train_predict_sets["base"]["x_train"]
-                            y_train = train_predict_sets["base"]["y_train"]
-                            x_past_predict = train_predict_sets["base"][
-                                "predictors_past"
-                            ]
-                            x_future_predict = train_predict_sets["base"][
-                                "predictors_future"
-                            ]
                         else:
+                            model_type = "common"
+
                             if model_params_user:
                                 model = model_cls(**model_params_user)
                             else:
                                 model = model_cls()
 
-                            x_train = train_predict_sets["common"]["x_train"]
-                            y_train = train_predict_sets["common"]["y_train"]
-                            x_past_predict = train_predict_sets["common"][
+                        if (
+                            model_type == "base"
+                            and train_predict_sets["base"]["status"]
+                        ) or (
+                            model_type == "common"
+                            and train_predict_sets["common"]["status"]
+                        ):
+                            x_train = train_predict_sets[model_type]["x_train"]
+                            y_train = train_predict_sets[model_type]["y_train"]
+                            x_past_predict = train_predict_sets[model_type][
                                 "predictors_past"
                             ]
-                            x_future_predict = train_predict_sets["common"][
+                            x_future_predict = train_predict_sets[model_type][
                                 "predictors_future"
                             ]
 
-                        model.fit(np.array(x_train), y_train)
+                            model.fit(np.array(x_train), y_train)
 
-                        # TODO: later out model.params_ to log and verbose-file
+                            # TODO: later out model.params_ to log and verbose-file
 
-                        y_test = model.predict(np.array(x_train))
-                        # !!! TODO:
-                        # Диагностический вывод будет всех метрик
-                        result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
-                        result_predict[model_idx]["rmse"] = root_mean_squared_error(
-                            y_train, y_test
-                        )
-                        result_predict[model_idx]["mae"] = mean_absolute_error(
-                            y_train, y_test
-                        )
+                            y_test = model.predict(np.array(x_train))
+                            # !!! TODO:
+                            # Диагностический вывод будет всех метрик
+                            result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
+                            result_predict[model_idx]["rmse"] = root_mean_squared_error(
+                                y_train, y_test
+                            )
+                            result_predict[model_idx]["mae"] = mean_absolute_error(
+                                y_train, y_test
+                            )
 
-                        result_predict[model_idx]["y_past_predict"] = model.predict(
-                            np.array(x_past_predict)
-                        )
-                        result_predict[model_idx]["y_future_predict"] = model.predict(
-                            np.array(x_future_predict)
-                        )
+                            result_predict[model_idx]["y_past_predict"] = model.predict(
+                                np.array(x_past_predict)
+                            )
+                            result_predict[model_idx]["y_future_predict"] = (
+                                model.predict(np.array(x_future_predict))
+                            )
+                        else:
+                            logging_err_status(model_type)
             except Exception as e:
                 logging.error(
                     "Ошибка при построении прогноза с помощью модели машинного обучения %s: %s",
@@ -1027,111 +1099,121 @@ class Adjustmenter:
             station["full_name"],
         )
 
-        # self.obs_time_past = station["db_time_past"][self.time_depth]
-        mod_time_past = station["om_time_past"][self.time_depth]
-        # mod_time_future = station["om_time_future"][self.time_forecast]
+        if "om_time_past" in station:
+            logging.info("Использую глобальный прогноз с Open-Meteo")
 
-        mod_recent = station["om_time_past"]["recent"]
-        idx_recent = mod_time_past.index(mod_recent)
+            # self.obs_time_past = station["db_time_past"][self.time_depth]
+            mod_time_past = station["om_time_past"][self.time_depth]
+            # mod_time_future = station["om_time_future"][self.time_forecast]
 
-        for par_short_name, parameter in station["parameters"].items():
-            if (
-                parameter["om_parameters"]
-                and parameter["om_parameters"][0] is not None
-                and parameter["om_parameters"][0].lower() != "none"
-            ):
-                logging.info(
-                    "Получение локального прогноза для параметра %s (код: %s)",
-                    parameter["name"],
-                    parameter["code"],
-                )
+            mod_recent = station["om_time_past"]["recent"]
+            idx_recent = mod_time_past.index(mod_recent)
 
-                parameter["om_data_local"] = {}
-                parameter["om_data_local"]["past"] = {}
-                parameter["om_data_local"]["future"] = {}
+            for par_short_name, parameter in station["parameters"].items():
+                if (
+                    parameter["om_parameters"]
+                    and parameter["om_parameters"][0] is not None
+                    and parameter["om_parameters"][0].lower() != "none"
+                ):
+                    logging.info(
+                        "Получение локального прогноза для параметра %s (код: %s)",
+                        parameter["name"],
+                        parameter["code"],
+                    )
 
-                parameter["om_data_local_no_corr"] = {}
-                parameter["om_data_local_no_corr"]["past"] = {}
-                parameter["om_data_local_no_corr"]["future"] = {}
+                    parameter["om_data_local"] = {}
+                    parameter["om_data_local"]["past"] = {}
+                    parameter["om_data_local"]["future"] = {}
 
-                obs_data = parameter["data"][self.time_depth]
-                predictors_default = parameter["om_parameters"]
+                    parameter["om_data_local_no_corr"] = {}
+                    parameter["om_data_local_no_corr"]["past"] = {}
+                    parameter["om_data_local_no_corr"]["future"] = {}
 
-                if par_short_name in self.cfg_sections:
-                    par_key = par_short_name
+                    obs_data = parameter["data"][self.time_depth]
+                    predictors_default = parameter["om_parameters"]
+
+                    if par_short_name in self.cfg_sections:
+                        par_key = par_short_name
+                    else:
+                        par_key = "default"
+
+                    predictors_cfg = self.config[par_key]["predictor-set"]
+
+                    train_predict_sets = self._get_train_predict_sets(
+                        obs_data,
+                        predictors_default,
+                        predictors_cfg,
+                        station["om_parameters"],
+                    )
+
+                    mod_local_past, mod_local_future = self._get_ml_forecast(
+                        par_key, train_predict_sets
+                    )
+
+                    parameter["om_data_local_no_corr"]["past"][
+                        self.time_depth
+                    ] = mod_local_past
+
+                    parameter["om_data_local_no_corr"]["future"][
+                        self.time_forecast
+                    ] = mod_local_future
+
+                    mod_local_past_corr, corr_past_percent = (
+                        self._check_corr_data_bounds(
+                            data=mod_local_past,
+                            min_val=parameter["min_value"],
+                            max_val=parameter["max_value"],
+                        )
+                    )
+                    parameter["om_data_local"]["past"][
+                        self.time_depth
+                    ] = mod_local_past_corr
+
+                    mod_local_future_corr, corr_future_percent = (
+                        self._check_corr_data_bounds(
+                            data=mod_local_future,
+                            min_val=parameter["min_value"],
+                            max_val=parameter["max_value"],
+                        )
+                    )
+                    parameter["om_data_local"]["future"][
+                        self.time_forecast
+                    ] = mod_local_future_corr
+
+                    if idx_recent:
+                        parameter["om_data_local_no_corr"]["past"]["recent"] = (
+                            mod_local_past[idx_recent]
+                        )
+                        parameter["om_data_local"]["past"]["recent"] = (
+                            mod_local_past_corr[idx_recent]
+                        )
+                    else:
+                        parameter["om_data_local_no_corr"]["past"]["recent"] = (
+                            mod_local_past[-1]
+                        )
+                        parameter["om_data_local"]["past"]["recent"] = (
+                            mod_local_past_corr[-1]
+                        )
+
+                    logging.info(
+                        "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде и %.2f %% значений прогноза в будущее",
+                        corr_past_percent,
+                        corr_future_percent,
+                    )
+                    # TODO: если включен verbose, то записать в verbose-файл в формате JSON информацию о построенных прогнозах
+                    # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
+                    # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
+
                 else:
-                    par_key = "default"
-
-                predictors_cfg = self.config[par_key]["predictor-set"]
-
-                train_predict_sets = self._get_train_predict_sets(
-                    obs_data,
-                    predictors_default,
-                    predictors_cfg,
-                    station["om_parameters"],
-                )
-
-                mod_local_past, mod_local_future = self._get_ml_forecast(
-                    par_key, train_predict_sets
-                )
-
-                parameter["om_data_local_no_corr"]["past"][
-                    self.time_depth
-                ] = mod_local_past
-
-                parameter["om_data_local_no_corr"]["future"][
-                    self.time_forecast
-                ] = mod_local_future
-
-                mod_local_past_corr, corr_past_percent = self._check_corr_data_bounds(
-                    data=mod_local_past,
-                    min_val=parameter["min_value"],
-                    max_val=parameter["max_value"],
-                )
-                parameter["om_data_local"]["past"][
-                    self.time_depth
-                ] = mod_local_past_corr
-
-                mod_local_future_corr, corr_future_percent = (
-                    self._check_corr_data_bounds(
-                        data=mod_local_future,
-                        min_val=parameter["min_value"],
-                        max_val=parameter["max_value"],
+                    logging.info(
+                        "Невозможно получить локальный прогноз для параметра %s (код: %s), т.к. отсутствуют данные глобального прогноза",
+                        parameter["name"],
+                        parameter["code"],
                     )
-                )
-                parameter["om_data_local"]["future"][
-                    self.time_forecast
-                ] = mod_local_future_corr
-
-                if idx_recent:
-                    parameter["om_data_local_no_corr"]["past"]["recent"] = (
-                        mod_local_past[idx_recent]
-                    )
-                    parameter["om_data_local"]["past"]["recent"] = mod_local_past_corr[
-                        idx_recent
-                    ]
-                else:
-                    parameter["om_data_local_no_corr"]["past"]["recent"] = (
-                        mod_local_past[-1]
-                    )
-                    parameter["om_data_local"]["past"]["recent"] = mod_local_past_corr[
-                        -1
-                    ]
-
-                logging.info(
-                    "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде и %.2f %% значений прогноза в будущее",
-                    corr_past_percent,
-                    corr_future_percent,
-                )
-                # TODO: если включен verbose, то записать в verbose-файл в формате JSON информацию о построенных прогнозах
-                # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
-                # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
-
-            else:
-                logging.info(
-                    "Невозможно получить локальный прогноз для параметра %s (код: %s), т.к. отсутствуют данные глобального прогноза",
-                    parameter["name"],
-                    parameter["code"],
-                )
+        else:
+            logging.info("Глобальный прогноз с Open-Meteo недоступен")
+            logging.info(
+                "Формирую обучающую выборку на основе статистического прогноза со смещением"
+            )
 
         return station
