@@ -158,25 +158,26 @@ class Plotter:
             )
             row_val.append(value_obs)
 
-            if self.local_forecast:
-                value_fc_local = (
-                    f"{float(parameter['om_data_local']['past']['recent']):1.1f}"
-                    if parameter["om_parameter"]
-                    and parameter["om_data_local"]["past"]["recent"] is not None
-                    else "-"
-                )
-                row_val.append(value_fc_local)
-                column_headers.append("Лок. прогноз")
+            if "om_data_local" in parameter:
+                if self.local_forecast:
+                    value_fc_local = (
+                        f"{float(parameter['om_data_local']['past']['recent']):1.1f}"
+                        if parameter["om_parameter"]
+                        and parameter["om_data_local"]["past"]["recent"] is not None
+                        else "-"
+                    )
+                    row_val.append(value_fc_local)
+                    column_headers.append("Лок. прогноз")
 
-            if self.glob_forecast:
-                value_fc_glob = (
-                    f"{float(parameter['om_data_glob']['past']['recent']):1.1f}"
-                    if parameter["om_parameter"]
-                    and parameter["om_data_glob"]["past"]["recent"] is not None
-                    else "-"
-                )
-                row_val.append(value_fc_glob)
-                column_headers.append("Глоб. прогноз")
+                if self.glob_forecast:
+                    value_fc_glob = (
+                        f"{float(parameter['om_data_glob']['past']['recent']):1.1f}"
+                        if parameter["om_parameter"]
+                        and parameter["om_data_glob"]["past"]["recent"] is not None
+                        else "-"
+                    )
+                    row_val.append(value_fc_glob)
+                    column_headers.append("Глоб. прогноз")
 
             # data.append([parameter["full_name"], value_obs])
             data.append(row_val)
@@ -379,14 +380,20 @@ class Plotter:
             station["om_time_past"][time_depth] if "om_time_past" in station else []
         )
         x_forecast_future = (
-            station["om_time_future"][time_depth] if "om_time_future" in station else []
+            station["om_time_future"][time_forecast]
+            if "om_time_future" in station
+            else []
         )
 
         # Формирование границ для оси Х
         if int(time_forecast[:-1]) > 0:
             x_limits = [
                 station["db_time_range_past"][time_depth][0],
-                station["om_time_range_future"][time_depth][-1],
+                (
+                    station["om_time_range_future"][time_forecast][-1]
+                    if "om_time_range_future" in station
+                    else station["db_time_range_past"][time_depth][-1]
+                ),
             ]
         else:
             x_limits = station["db_time_range_past"][time_depth]
