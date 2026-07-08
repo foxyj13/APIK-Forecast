@@ -39,7 +39,7 @@ class OMReader:
         time_depth: str = "7d",
         time_forecast: str = "0d",
         now_date=None,
-    ) -> dict:
+    ) -> tuple[bool, dict]:
         logging.info(
             "Считываю данные моделирования с Open-Meteo для станции %s (%s)",
             station["code"],
@@ -52,7 +52,11 @@ class OMReader:
         # Формирование перечня OM-метеопараметров, необходимых для дальнейшей работы по этой станции
         om_parameters_list = set()
         for _, par_info in station["parameters"].items():
-            om_parameters_list = om_parameters_list | set(par_info["om_parameters"])
+            om_parameters_list = (
+                om_parameters_list
+                | set(par_info["om_predictors"])
+                | set(par_info["om_parameter"])
+            )
 
         om_parameters_list = [
             par_name
@@ -86,7 +90,7 @@ class OMReader:
         except Exception as ex:
             logging.error("Ошибка получения данных для исторического периода!")
             logging.error("Exception: %s", ex)
-            return station
+            return False, station
 
         # Получение сетки по времени для past
         om_time_past = (
@@ -108,7 +112,7 @@ class OMReader:
             logging.error(
                 "Ошибка получения начала интервала по времени для исторических прогнозов!"
             )
-            return station
+            return False, station
 
         try:
             idx_end = om_time_past.index(station["db_time_past"][time_depth][-1])
@@ -116,7 +120,7 @@ class OMReader:
             logging.error(
                 "Ошибка получения конца интервала по времени для исторических прогнозов!"
             )
-            return station
+            return False, station
 
         station["om_time_past"] = {}
         station["om_time_past"][time_depth] = om_time_past[idx_start : idx_end + 1]
@@ -136,7 +140,23 @@ class OMReader:
                 responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
             )
 
-        # 2) и отдельно для future: считать -> разложить в словарь station
+        # 2) отдельно выделить значение recent (уже считаны) -> разложить в словарь station
+        try:
+            idx = station["om_time_past"][time_depth].index(
+                station["db_time_past"]["recent"]
+            )
+        except ValueError:
+            logging.error("Ошибка получения текущего момента времени (recent)!")
+            return False, station
+
+        for om_par in om_parameters_list:
+            station["om_parameters"][om_par]["past"]["recent"] = station[
+                "om_parameters"
+            ][om_par]["past"][time_depth][idx]
+
+        station["om_time_past"]["recent"] = station["db_time_past"]["recent"]
+
+        # 3) и отдельно для future: считать -> разложить в словарь station
         if int(time_forecast[:-1]) > 0:
             request_params_future = deepcopy(request_params)
             request_params_future["hourly"] = om_parameters_list
@@ -150,7 +170,7 @@ class OMReader:
             except Exception as ex:
                 logging.error("Ошибка получения данных для прогнозного периода!")
                 logging.error("Exception: %s", ex)
-                return station
+                return False, station
 
             # Получение сетки по времени для future
             om_time_future = (
@@ -178,7 +198,7 @@ class OMReader:
                 logging.error(
                     "Ошибка получения начала интервала по времени для прогноза вперед!"
                 )
-                return station
+                return False, station
 
             date_future_end = station["db_time_past"]["recent"] + timedelta(
                 days=int(time_forecast[:-1])
@@ -189,7 +209,7 @@ class OMReader:
                 logging.error(
                     "Ошибка получения конца интервала по времени для прогноза вперед!"
                 )
-                return station
+                return False, station
 
             station["om_time_future"] = {}
             station["om_time_future"][time_forecast] = om_time_future[
@@ -210,20 +230,4 @@ class OMReader:
                     responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
                 )
 
-        # 3) и отдельно выделить значение recent (уже считаны) -> разложить в словарь station
-        try:
-            idx = station["om_time_past"][time_depth].index(
-                station["db_time_past"]["recent"]
-            )
-        except ValueError:
-            logging.error("Ошибка получения текущего момента времени (recent)!")
-            return station
-
-        for om_par in om_parameters_list:
-            station["om_parameters"][om_par]["past"]["recent"] = station[
-                "om_parameters"
-            ][om_par]["past"][time_depth][idx]
-
-        station["om_time_past"]["recent"] = station["db_time_past"]["recent"]
-
-        return station
+        return True, station
