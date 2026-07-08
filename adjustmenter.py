@@ -523,7 +523,6 @@ class Adjustmenter:
         target: list,
         idx_target_none: list,
         predictor_default_names: list,
-        predictor_cfg_names: list,
         predictor_data: dict,
         time_depth: str,
         time_forecast: str,
@@ -549,11 +548,7 @@ class Adjustmenter:
                 )
                 return False
 
-        if predictor_cfg_names and check_names(
-            predictor_cfg_names, list(predictor_data.keys())
-        ):
-            predictor_names = predictor_cfg_names
-        elif predictor_default_names and check_names(
+        if predictor_default_names and check_names(
             predictor_default_names, list(predictor_data.keys())
         ):
             predictor_names = predictor_default_names
@@ -632,32 +627,18 @@ class Adjustmenter:
         target: list,
         idx_target_none: list,
         predictor_default_names: list,
-        predictor_cfg_names: list,
         predictor_data: dict,
         time_depth: str,
         time_forecast: str,
     ) -> dict:
         """Получение наборов данных для работы с базовыми моделями (может быть только 1 предиктор)"""
 
-        if predictor_cfg_names and len(predictor_cfg_names) == 1:
-            predictor_name = predictor_cfg_names[0]
-        else:
-            if predictor_default_names:
-                if len(predictor_default_names) == 1:
-                    predictor_name = predictor_default_names[0]
-                else:
-                    return {
-                        "status": -2,
-                        "x_train": [],
-                        "y_train": [],
-                        "predictors_past": [],
-                        "idx_predictor_past_none": [],
-                        "predictors_future": [],
-                        "idx_predictor_future_none": [],
-                    }
+        if predictor_default_names:
+            if len(predictor_default_names) == 1:
+                predictor_name = predictor_default_names[0]
             else:
                 return {
-                    "status": -1,
+                    "status": -2,
                     "x_train": [],
                     "y_train": [],
                     "predictors_past": [],
@@ -665,6 +646,16 @@ class Adjustmenter:
                     "predictors_future": [],
                     "idx_predictor_future_none": [],
                 }
+        else:
+            return {
+                "status": -1,
+                "x_train": [],
+                "y_train": [],
+                "predictors_past": [],
+                "idx_predictor_past_none": [],
+                "predictors_future": [],
+                "idx_predictor_future_none": [],
+            }
 
         predictor_past = predictor_data[predictor_name]["past"][time_depth]
         predictor_future = predictor_data[predictor_name]["future"][time_forecast]
@@ -734,7 +725,6 @@ class Adjustmenter:
         self,
         target: list,
         predictor_default_names: list,
-        predictor_cfg_names: list,
         predictor_data: dict,
     ) -> dict:
         # status = 1: все ОК
@@ -775,7 +765,6 @@ class Adjustmenter:
                 target,
                 idx_target_none,
                 predictor_default_names,
-                predictor_cfg_names,
                 predictor_data,
                 self.time_depth,
                 self.time_forecast,
@@ -785,7 +774,6 @@ class Adjustmenter:
                 target,
                 idx_target_none,
                 predictor_default_names,
-                predictor_cfg_names,
                 predictor_data,
                 self.time_depth,
                 self.time_forecast,
@@ -1127,12 +1115,9 @@ class Adjustmenter:
                     else:
                         par_key = "default"
 
-                    predictors_cfg = self.config[par_key]["predictor-set"]
-
                     train_predict_sets = self._get_train_predict_sets(
                         obs_data,
                         predictors_default,
-                        predictors_cfg,
                         station["om_parameters"],
                     )
 
