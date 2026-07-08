@@ -1,6 +1,9 @@
 # Arshan Project
+
 import argparse
 import datetime
+
+# from datetime import datetime
 import logging
 import os
 import sys
@@ -111,11 +114,36 @@ def read_stations(stations_file: str) -> list:
                 "no_value": ws_parameters[f"E{par_row_id}"].value,
                 "min_value": ws_parameters[f"F{par_row_id}"].value,
                 "max_value": ws_parameters[f"G{par_row_id}"].value,
-                "om_parameters": [
+                "db_predictors": {
+                    ttt: {}
+                    for ttt in [
+                        tmp.strip()
+                        for tmp in str(ws_parameters[f"H{par_row_id}"].value).split(";")
+                    ]
+                },
+                "om_parameter": ws_parameters[f"I{par_row_id}"].value,
+                "om_predictors": [
                     tmp.strip()
-                    for tmp in str(ws_parameters[f"H{par_row_id}"].value).split(";")
+                    for tmp in str(ws_parameters[f"J{par_row_id}"].value).split(";")
                 ],
             }
+
+    for par_code, par_code_info in all_parameters.items():
+        for pred_name in par_code_info["db_predictors"]:
+            pred_name_codes = []
+            no_val = -999
+            min_val = -999
+            max_val = -999
+            for pred_code, pred_info in all_parameters.items():
+                if pred_info["name"] == pred_name:
+                    pred_name_codes.append(pred_code)
+                    no_val = pred_info["no_value"]
+                    min_val = pred_info["min_value"]
+                    max_val = pred_info["max_value"]
+            par_code_info["db_predictors"][pred_name]["codes"] = pred_name_codes
+            par_code_info["db_predictors"][pred_name]["no_value"] = no_val
+            par_code_info["db_predictors"][pred_name]["min_value"] = min_val
+            par_code_info["db_predictors"][pred_name]["max_value"] = max_val
 
     stations = []
     for st_row_id in range(2, ws_stations.max_row + 1):
@@ -158,7 +186,9 @@ def main():
     mode = args.mode
     time_depth = args.time_depth
     time_forecast = args.time_forecast
-    now_date = args.now_date
+    now_date = datetime.datetime.strptime(
+        args.now_date, "%Y-%m-%d"
+    ).date()  # args.now_date
 
     now = datetime.date.today()
 
@@ -291,12 +321,22 @@ def main():
 
             # ------------ Чтение глобальных прогнозов ------------
             for station in stations:
-                station = om_reader.get_model_data(
-                    station=station,
-                    time_depth=time_depth,
-                    time_forecast=time_forecast,
-                    now_date=now_date,
-                )
+                status = False
+
+                # status, station = om_reader.get_model_data(
+                #     station=station,
+                #     time_depth=time_depth,
+                #     time_forecast=time_forecast,
+                #     now_date=now_date,
+                # )
+
+                if not status:
+                    logging.info("Глобальный прогноз полностью получен не был")
+                    status, station = db_reader.get_station_predictors(
+                        station=station,
+                        time_depth=time_depth,
+                        time_forecast=time_forecast,
+                    )
 
             # ------------ Если прогноз нужно корректировать ------------
             if mode == "forec_adj":

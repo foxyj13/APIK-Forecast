@@ -138,7 +138,7 @@ class DBReader:
             station_timeshift = datetime.timedelta(hours=rows[0].timezone)
 
             result["station_timeshift"] = station_timeshift
-            
+
             result["db_time_past"] = {}
             result["db_time_past"] = {
                 "c_yr": [],
@@ -274,3 +274,175 @@ class DBReader:
             )
             return {}
         return result
+
+    def get_station_predictors(
+        self, station: dict, time_depth: str, time_forecast: str, now_date=None
+    ) -> tuple[bool, dict]:
+        logging.info(
+            "Дополнительное считывание данных из БД для статистического прогнозадля станции %s (%s)",
+            station["code"],
+            station["full_name"],
+        )
+
+        # Определение временных пределов для prepast и past
+        utc_now = time.time()  # Current time in UTC
+        utc_now_date = datetime.datetime.fromtimestamp(
+            utc_now, tz=datetime.timezone.utc
+        )
+
+        # now - time_depth - time_forecast
+        utc_td_tf_before = (
+            utc_now - (int(time_depth[:-1]) + int(time_forecast[:-1])) * 24 * 60 * 60
+        )
+        utc_td_tf_before_date = datetime.datetime.fromtimestamp(
+            utc_td_tf_before, tz=datetime.timezone.utc
+        )
+
+        # now - time_forecast
+        utc_tf_before = utc_now - int(time_forecast[:-1]) * 24 * 60 * 60
+        utc_tf_before_date = datetime.datetime.fromtimestamp(
+            utc_tf_before, tz=datetime.timezone.utc
+        )
+
+        # now - time_depth
+        utc_td_before = utc_now - int(time_depth[:-1]) * 24 * 60 * 60
+        utc_td_before_date = datetime.datetime.fromtimestamp(
+            utc_td_before, tz=datetime.timezone.utc
+        )
+
+        # Формирование перечня предикторов и их возможных кодов, необходимых для дальнейшей работы по этой станции
+        # predictor_names = set()
+        # redictor_codes = {}
+        predictors = {}
+        for par_name, par_info in station["parameters"].items():
+            # predictor_names = predictor_names | set(par_info["db_predictors"])
+            # predictor_codes.update(par_info["db_predictors_codes"])
+            predictors.update(par_info["db_predictors"])
+
+        # Формирование запроса и выборка данных
+        if self.meta and self.session and station["code"] in self.meta.tables:
+            data_tbl = self.meta.tables[station["code"]]
+            qry = self.session.query(data_tbl.columns["timezone"].label("timezone"))
+            qry = qry.add_columns(data_tbl.columns["time"].label("time"))
+
+            for pred_name, pred_info in predictors.items():
+                for pred_code in pred_info["codes"]:
+                    if pred_code in data_tbl.columns.keys():
+                        qry = qry.add_columns(
+                            data_tbl.columns[pred_code].label(pred_name)
+                        )
+
+            # Выбрать данные для периода prepast: [now - time_depth - time_forecast; now - time_forecast)
+            qry = qry.select_from(data_tbl)
+            qry_prepast = qry.filter(
+                data_tbl.c.time >= utc_td_tf_before, data_tbl.c.time <= utc_tf_before
+            )
+            try:
+                rows_prepast = qry_prepast.all()
+            except NoResultFound:
+                logging.error(
+                    "ОШИБКА! В БД не найдено ни одного результата для периода [now - time_depth - time_forecast; now - time_forecast]!"
+                )
+                return False, station
+
+            if not rows_prepast:
+                logging.error(
+                    "Нет данных для периода [now - time_depth - time_forecast; now - time_forecast]!"
+                )
+                return False, station
+
+            # Выбрать данные для периода past: [now - time_depth; now)
+            qry_past = qry.filter(data_tbl.c.time >= utc_td_before)
+            try:
+                rows_past = qry_past.all()
+            except NoResultFound:
+                logging.error(
+                    "ОШИБКА! В БД не найдено ни одного результата для периода [now - time_depth; now]!"
+                )
+                return False, station
+
+            if not rows_past:
+                logging.error("Нет данных для периода [now - time_depth; now]!")
+                return False, station
+
+            station_timeshift = datetime.timedelta(hours=rows_prepast[0].timezone)
+
+            station["om_time_prepast"] = {time_depth: []}
+            station["om_time_past"] = {
+                time_depth: [],
+                "recent": datetime.datetime.fromtimestamp(
+                    rows_past[-1].time, tz=datetime.timezone.utc
+                )
+                + station_timeshift,
+            }
+
+            station["om_time_range_prepast"] = {}
+            station["om_time_range_past"] = {}
+            station["om_time_range_prepast"][time_depth] = [
+                utc_td_tf_before_date + station_timeshift,
+                utc_tf_before_date + station_timeshift,
+            ]
+            station["om_time_range_past"][time_depth] = [
+                utc_td_before_date + station_timeshift,
+                utc_now_date + station_timeshift,
+            ]
+
+            # Инициализация ветки в station для хранения метеопараметров взамен ОМ
+            # Структура хранения та же, но данные - наблюдений, а не ОМ
+            station["om_parameters"] = {}
+
+            # Запись полученных из БД данных в структуру
+            for row in rows_prepast:
+                row_time = (
+                    datetime.datetime.fromtimestamp(row.time, tz=datetime.timezone.utc)
+                    + station_timeshift
+                )
+                station["om_time_prepast"][time_depth].append(row_time)
+
+                for pred_name, pred_info in predictors.items():
+                    row_value = self._fix_value(
+                        row._mapping[pred_name], pred_info["no_value"]
+                    )
+
+                    if pred_name in station["om_parameters"]:
+                        station["om_parameters"][pred_name]["prepast"][
+                            time_depth
+                        ].append(row_value)
+                    else:
+                        station["om_parameters"][pred_name] = {}
+                        station["om_parameters"][pred_name]["prepast"] = {
+                            time_depth: [row_value]
+                        }
+
+            for row in rows_past:
+                row_time = (
+                    datetime.datetime.fromtimestamp(row.time, tz=datetime.timezone.utc)
+                    + station_timeshift
+                )
+                station["om_time_past"][time_depth].append(row_time)
+
+                for pred_name, pred_info in predictors.items():
+                    row_value = self._fix_value(
+                        row._mapping[pred_name], pred_info["no_value"]
+                    )
+
+                    if "past" in station["om_parameters"][pred_name]:
+                        station["om_parameters"][pred_name]["past"][time_depth].append(
+                            row_value
+                        )
+                    else:
+                        station["om_parameters"][pred_name]["past"] = {
+                            time_depth: [row_value]
+                        }
+
+            for pred_name, pred_info in predictors.items():
+                station["om_parameters"][pred_name]["past"]["recent"] = self._fix_value(
+                    rows_past[-1]._mapping[pred_name], pred_info["no_value"]
+                )
+        else:
+            logging.error(
+                "ОШИБКА! Станции с кодом %s в БД не обнаружено!", station["code"]
+            )
+            return False, station
+
+        return True, station
