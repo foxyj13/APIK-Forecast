@@ -61,7 +61,6 @@ class Adjustmenter:
             "model-set",
             "grid-search",
             "get-result",
-            "predictor-set",
             "best-result-metrics",
         ]
         self.config = self._check_config_models(config)
@@ -367,22 +366,6 @@ class Adjustmenter:
             logging.info(
                 "[%s] Проверка указания кастомного набора предикторов", par_model_key
             )
-            if "predictor-set" in par_model_cfg:
-                par_model_cfg["predictor-set"] = [
-                    predictor.strip()
-                    for predictor in par_model_cfg["predictor-set"].split(",")
-                ]
-                logging.info(
-                    "[%s] Будет использован пользовательский набор предикторов (заменит предикторы по умолчанию, если они есть, см. файл со станциями и параметрами): %s",
-                    par_model_key,
-                    par_model_cfg["predictor-set"],
-                )
-            else:
-                par_model_cfg["predictor-set"] = []
-                logging.info(
-                    "[%s] Будут использованы предикторы по умолчанию (см. файл со станциями и параметрами)",
-                    par_model_key,
-                )
 
             # Определяем метрику для внутренней оценки качества прогноза и по которой будет выбираться наилучший результат
             if "best-result-metrics" not in par_model_cfg:
@@ -981,7 +964,9 @@ class Adjustmenter:
 
                             result_predict[model_idx]["y_past_predict"] = x_test
                             result_predict[model_idx]["y_future_predict"] = (
-                                model.forecast(steps=int(self.time_forecast[:-1]))
+                                model.forecast(
+                                    steps=int(self.time_forecast[:-1]) * 24 + 1
+                                )
                             )
                         else:
                             logging_err_status(model_type)
@@ -1046,7 +1031,7 @@ class Adjustmenter:
                 logging.info("Переход к следующей модели (если есть)")
                 continue
 
-        if result_predict:
+        if result_predict and result_predict[0]:
             if len(model_set) == 1:
                 y_past_predict = result_predict[0]["y_past_predict"]
                 y_future_predict = result_predict[0]["y_future_predict"]
@@ -1057,11 +1042,16 @@ class Adjustmenter:
                         result_predict,
                         key=lambda idx: result_predict[idx][best_result_metrics],
                     )
+
+                    # TODO перед записью в итоговый словарь нужно вернуть обратно пропуски, если выбран "common" и "base"
                     y_past_predict = result_predict[best_model_idx]["y_past_predict"]
                     y_future_predict = result_predict[best_model_idx][
                         "y_future_predict"
                     ]
+
                 elif get_result_way == "mean":
+                    # TODO перед расчетом среднего нужно вернуть обратно пропуски для "common" и "base"
+
                     y_past_predict = np.mean(
                         [
                             result_predict[idx]["y_past_predict"]
@@ -1087,8 +1077,8 @@ class Adjustmenter:
             logging.error(
                 "Не удалось построить прогноз ни с одной из моделей машинного обучения. Будет возвращен прогноз без коррекции (т.е. глобальный прогноз)."
             )
-            y_past_predict = x_past_predict
-            y_future_predict = x_future_predict
+            y_past_predict = []  # x_past_predict
+            y_future_predict = []  # x_future_predict
 
         return list(y_past_predict), list(y_future_predict)
 
@@ -1104,7 +1094,7 @@ class Adjustmenter:
 
             # self.obs_time_past = station["db_time_past"][self.time_depth]
             mod_time_past = station["om_time_past"][self.time_depth]
-            # mod_time_future = station["om_time_future"][self.time_forecast]
+            mod_time_future = station["om_time_future"][self.time_forecast]
 
             mod_recent = station["om_time_past"]["recent"]
             idx_recent = mod_time_past.index(mod_recent)
@@ -1130,7 +1120,7 @@ class Adjustmenter:
                     parameter["om_data_local_no_corr"]["future"] = {}
 
                     obs_data = parameter["data"][self.time_depth]
-                    predictors_default = parameter["om_parameters"]
+                    predictors_default = parameter["om_predictors"]
 
                     if par_short_name in self.cfg_sections:
                         par_key = par_short_name
@@ -1150,56 +1140,91 @@ class Adjustmenter:
                         par_key, train_predict_sets
                     )
 
-                    parameter["om_data_local_no_corr"]["past"][
-                        self.time_depth
-                    ] = mod_local_past
+                    if mod_local_past:
+                        parameter["om_data_local_no_corr"]["past"][
+                            self.time_depth
+                        ] = mod_local_past
 
-                    parameter["om_data_local_no_corr"]["future"][
-                        self.time_forecast
-                    ] = mod_local_future
-
-                    mod_local_past_corr, corr_past_percent = (
-                        self._check_corr_data_bounds(
-                            data=mod_local_past,
-                            min_val=parameter["min_value"],
-                            max_val=parameter["max_value"],
+                        mod_local_past_corr, corr_past_percent = (
+                            self._check_corr_data_bounds(
+                                data=mod_local_past,
+                                min_val=parameter["min_value"],
+                                max_val=parameter["max_value"],
+                            )
                         )
-                    )
-                    parameter["om_data_local"]["past"][
-                        self.time_depth
-                    ] = mod_local_past_corr
+                        parameter["om_data_local"]["past"][
+                            self.time_depth
+                        ] = mod_local_past_corr
 
-                    mod_local_future_corr, corr_future_percent = (
-                        self._check_corr_data_bounds(
-                            data=mod_local_future,
-                            min_val=parameter["min_value"],
-                            max_val=parameter["max_value"],
+                        logging.info(
+                            "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде",
+                            corr_past_percent,
                         )
-                    )
-                    parameter["om_data_local"]["future"][
-                        self.time_forecast
-                    ] = mod_local_future_corr
+                    else:
+                        none_arr = [None for idx in range(len(mod_time_past))]
+
+                        parameter["om_data_local_no_corr"]["past"][
+                            self.time_depth
+                        ] = none_arr
+
+                        parameter["om_data_local"]["past"][self.time_depth] = none_arr
+
+                        logging.info(
+                            "Локальный прогноз на исторический период отсутствует"
+                        )
+
+                    if mod_local_future:
+                        parameter["om_data_local_no_corr"]["future"][
+                            self.time_forecast
+                        ] = mod_local_future
+
+                        mod_local_future_corr, corr_future_percent = (
+                            self._check_corr_data_bounds(
+                                data=mod_local_future,
+                                min_val=parameter["min_value"],
+                                max_val=parameter["max_value"],
+                            )
+                        )
+                        parameter["om_data_local"]["future"][
+                            self.time_forecast
+                        ] = mod_local_future_corr
+
+                        logging.info(
+                            "Скорректировано под допустимый диапазон %.2f %% значений прогноза в будущее",
+                            corr_future_percent,
+                        )
+                    else:
+                        none_arr = [None for idx in range(len(mod_time_future))]
+
+                        parameter["om_data_local_no_corr"]["future"][
+                            self.time_forecast
+                        ] = none_arr
+
+                        parameter["om_data_local"]["future"][
+                            self.time_forecast
+                        ] = none_arr
+
+                        logging.info("Локальный прогноз в будущее отсутствует")
 
                     if idx_recent:
                         parameter["om_data_local_no_corr"]["past"]["recent"] = (
-                            mod_local_past[idx_recent]
+                            parameter["om_data_local_no_corr"]["past"][self.time_depth][
+                                idx_recent
+                            ]
                         )
-                        parameter["om_data_local"]["past"]["recent"] = (
-                            mod_local_past_corr[idx_recent]
-                        )
+                        parameter["om_data_local"]["past"]["recent"] = parameter[
+                            "om_data_local"
+                        ]["past"][self.time_depth][idx_recent]
                     else:
                         parameter["om_data_local_no_corr"]["past"]["recent"] = (
-                            mod_local_past[-1]
+                            parameter["om_data_local_no_corr"]["past"][self.time_depth][
+                                -1
+                            ]
                         )
-                        parameter["om_data_local"]["past"]["recent"] = (
-                            mod_local_past_corr[-1]
-                        )
+                        parameter["om_data_local"]["past"]["recent"] = parameter[
+                            "om_data_local"
+                        ]["past"][self.time_depth][-1]
 
-                    logging.info(
-                        "Скорректировано под допустимый диапазон %.2f %% значений прогноза на историческом периоде и %.2f %% значений прогноза в будущее",
-                        corr_past_percent,
-                        corr_future_percent,
-                    )
                     # TODO: если включен verbose, то записать в verbose-файл в формате JSON информацию о построенных прогнозах
                     # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
                     # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
