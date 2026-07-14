@@ -135,10 +135,18 @@ class Plotter:
         )
         if self.local_forecast:
             logging.info("Добавляю значения локального (уточненного) прогноза")
-        if self.glob_forecast:
-            logging.info("Добавляю значения глобального (сырого) прогноза")
 
-        plt.ioff()
+        glob_forecast = self.glob_forecast
+        if glob_forecast:
+            if "om_time_prepast" in station:
+                glob_forecast = False
+                logging.info(
+                    "Добавление глобального (сырого) прогноза невозможно, т.к. проводился расчет стат. прогноза"
+                )
+            else:
+                logging.info("Добавляю значения глобального (сырого) прогноза")
+
+        # plt.ioff()
 
         title_text = station["full_name"]
         fig_border = "steelblue"
@@ -158,26 +166,30 @@ class Plotter:
             )
             row_val.append(value_obs)
 
-            if "om_data_local" in parameter:
-                if self.local_forecast:
-                    value_fc_local = (
-                        f"{float(parameter['om_data_local']['past']['recent']):1.1f}"
-                        if parameter["om_parameter"]
-                        and parameter["om_data_local"]["past"]["recent"] is not None
-                        else "-"
-                    )
-                    row_val.append(value_fc_local)
-                    column_headers.append("Лок. прогноз")
+            # if "om_data_local" in parameter:
+            if self.local_forecast:
+                value_fc_local = (
+                    f"{float(parameter['om_data_local']['past']['recent']):1.1f}"
+                    if "om_data_local" in parameter
+                    and parameter["om_data_local"]["past"]["recent"] is not None
+                    else "-"
+                )
+                row_val.append(value_fc_local)
+                column_headers.append("Лок. прогноз")
 
-                if self.glob_forecast:
-                    value_fc_glob = (
-                        f"{float(parameter['om_data_glob']['past']['recent']):1.1f}"
-                        if parameter["om_parameter"]
-                        and parameter["om_data_glob"]["past"]["recent"] is not None
-                        else "-"
-                    )
-                    row_val.append(value_fc_glob)
-                    column_headers.append("Глоб. прогноз")
+            if glob_forecast:
+                value_fc_glob = (
+                    f"{float(station['om_parameter'][parameter['om_parameter']]['past']['recent']):1.1f}"
+                    if "om_parameter" in parameter
+                    and parameter["om_parameter"] in station["om_parameter"]
+                    and station["om_parameter"][parameter["om_parameter"]]["past"][
+                        "recent"
+                    ]
+                    is not None
+                    else "-"
+                )
+                row_val.append(value_fc_glob)
+                column_headers.append("Глоб. прогноз")
 
             # data.append([parameter["full_name"], value_obs])
             data.append(row_val)
@@ -234,7 +246,7 @@ class Plotter:
         )
         plt.close(fig)
 
-        plt.ion()
+        # plt.ion()
 
     def _make_plot(self, station: dict, time_scale: str):
         plt.ioff()  # Отключение интерактивного режима (чтобы окна при работе не мелькали)
@@ -360,15 +372,22 @@ class Plotter:
             )
             suffix_floc = "_floc"
 
-        if self.glob_forecast:
-            logging.info(
-                "Добавляю график глобального (сырого) прогнозаза прошлые %s дней и на будущие %s дней",
-                time_depth[:-1],
-                time_forecast[:-1],
-            )
-            suffix_fglob = "_fglob"
+        glob_forecast = self.glob_forecast
+        if glob_forecast:
+            if "om_time_prepast" in station:
+                glob_forecast = False
+                logging.info(
+                    "Добавление глобального (сырого) прогноза невозможно, т.к. проводился расчет стат. прогноза"
+                )
+            else:
+                logging.info(
+                    "Добавляю график глобального (сырого) прогнозаза прошлые %s дней и на будущие %s дней",
+                    time_depth[:-1],
+                    time_forecast[:-1],
+                )
+                suffix_fglob = "_fglob"
 
-        plt.ioff()  # Отключение интерактивного режима (чтобы окна при работе не мелькали)
+        # plt.ioff()  # Отключение интерактивного режима (чтобы окна при работе не мелькали)
 
         footer_text = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
 
@@ -430,10 +449,11 @@ class Plotter:
 
             # Добавление глобального (сырого) прогноза
             if self.glob_forecast:
-                if "om_data_glob" in parameter:
+                if "om_parameter" in parameter
+                and parameter["om_parameter"] in station["om_parameter"]:
                     # Отрисовка исторического интервала прогноза
-                    if "past" in parameter["om_data_glob"]:
-                        y_glob_past = parameter["om_data_glob"]["past"][time_depth]
+                    if "past" in station["om_parameter"][parameter["om_parameter"]]:
+                        y_glob_past = station["om_parameter"][parameter["om_parameter"]]["past"][time_depth]
                         ax.plot(
                             x_forecast_past,
                             y_glob_past,
@@ -442,8 +462,8 @@ class Plotter:
                         )
 
                     # Отрисовка прогноза вперед
-                    if "future" in parameter["om_data_glob"]:
-                        y_glob_future = parameter["om_data_glob"]["future"][time_depth]
+                    if "future" in station["om_parameter"][parameter["om_parameter"]]:
+                        y_glob_future = station["om_parameter"][parameter["om_parameter"]]["future"][time_depth]
                         ax.plot(x_forecast_future, y_glob_future, "--", color="darkred")
 
             ax.set_ylabel(parameter["full_name"], size=13)
