@@ -331,12 +331,18 @@ def main():
                 # )
 
                 if not status:
-                    logging.info("Глобальный прогноз полностью получен не был")
+                    logging.error("Глобальный прогноз не получен")
                     status, station = db_reader.get_station_predictors(
                         station=station,
                         time_depth=time_depth,
                         time_forecast=time_forecast,
                     )
+
+                    if not status:
+                        logging.error(
+                            "Предикторы для статистического прогноза не получены. Остановка программы"
+                        )
+                        sys.exit(1)
 
             # ------------ Если прогноз нужно корректировать ------------
             if mode == "forec_adj":
