@@ -518,27 +518,11 @@ class Adjustmenter:
 
         return data, 100.0 * corr_cnt / len(data)
 
-    # @staticmethod
-    # def _check_time(time_list_1: list, time_list_2: list) -> set:
-
-    #     idx_diff_1_2 = [
-    #         idx for idx, val in enumerate(time_list_1) if val not in time_list_2
-    #     ]
-
-    #     idx_diff_2_1 = [
-    #         idx for idx, val in enumerate(time_list_2) if val not in time_list_1
-    #     ]
-
-    #     return set(idx_diff_1_2) | set(idx_diff_2_1)
-
     @staticmethod
     def _get_train_predict_sets_common(
-        self,
         forecast_type: str,
         target: list,
-        idx_target_none: list,
-        # train_target_time: list,
-        # train_predictor_time: list,
+        idx_target_none: list,        
         predictor_default_names: list,
         predictor_data: dict,
         time_depth: str,
@@ -618,9 +602,7 @@ class Adjustmenter:
                     "predictors_future": [],
                     "idx_predictor_future_none": [],
                 }
-            else:
-                # idx_del_time = self._check_time(train_target_time, train_predictor_time)
-
+            else:                
                 x_train = [
                     val
                     for idx, val in enumerate(predictor_past)
@@ -664,12 +646,9 @@ class Adjustmenter:
 
     @staticmethod
     def _get_train_predict_sets_basemodels(
-        self,
         forecast_type: str,
         target: list,
-        idx_target_none: list,
-        # train_target_time: list,
-        # train_predictor_time: list,
+        idx_target_none: list,        
         predictor_default_names: list,
         predictor_data: dict,
         time_depth: str,
@@ -738,9 +717,7 @@ class Adjustmenter:
                 "predictors_future": [],
                 "idx_predictor_future_none": [],
             }
-        else:
-            # idx_del_time = self._check_time(train_target_time, train_predictor_time)
-
+        else:            
             x_train = [
                 val
                 for idx, val in enumerate(predictor_past)
@@ -787,9 +764,7 @@ class Adjustmenter:
     def _get_train_predict_sets(
         self,
         forecast_type: str,
-        target: list,
-        # train_target_time: list,
-        # train_predictor_time: list,
+        target: list,        
         predictor_names: list,
         predictor_data: dict,
     ) -> dict:
@@ -830,9 +805,7 @@ class Adjustmenter:
             common_models = self._get_train_predict_sets_common(
                 forecast_type,
                 target,
-                idx_target_none,
-                train_target_time,
-                train_predictor_time,
+                idx_target_none,                
                 predictor_names,
                 predictor_data,
                 self.time_depth,
@@ -842,9 +815,7 @@ class Adjustmenter:
             base_models = self._get_train_predict_sets_basemodels(
                 forecast_type,
                 target,
-                idx_target_none,
-                train_target_time,
-                train_predictor_time,
+                idx_target_none,                
                 predictor_names,
                 predictor_data,
                 self.time_depth,
@@ -1150,8 +1121,7 @@ class Adjustmenter:
             station["full_name"],
         )
 
-        if "om_time_past" in station:
-            # self.obs_time_past = station["db_time_past"][self.time_depth]
+        if "om_time_past" in station:            
             time_past = station["om_time_past"][self.time_depth]
             mod_time_future = station["om_time_future"][self.time_forecast]
 
@@ -1170,10 +1140,7 @@ class Adjustmenter:
                 if "om_time_prepast" in station:
                     logging.info("Расчет статистического прогноза")
 
-                    forecast_type = "stat"
-
-                    # obs_time_past = station["om_time_past"][self.time_depth]
-                    # predictor_time_past = station["om_time_prepast"][self.time_depth]
+                    forecast_type = "stat"                    
 
                     if parameter["db_predictors"]:
                         predictors_list = list(parameter["db_predictors"].keys())
@@ -1186,10 +1153,7 @@ class Adjustmenter:
                 else:
                     logging.info("Расчет прогноза на основе глобального от Open-Meteo")
 
-                    forecast_type = "mod"
-
-                    # obs_time_past = station["db_time_past"][self.time_depth]
-                    # predictor_time_past = station["om_time_past"][self.time_depth]
+                    forecast_type = "mod"                    
 
                     if (
                         parameter["om_predictors"]
@@ -1210,9 +1174,7 @@ class Adjustmenter:
                     obs_data = parameter["data"][self.time_depth]
                     train_predict_sets = self._get_train_predict_sets(
                         forecast_type,
-                        obs_data,
-                        # obs_time_past,
-                        # predictor_time_past,
+                        obs_data,                        
                         predictors_list,
                         station["om_parameters"],
                     )
