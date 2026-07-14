@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import timedelta  # , date
+import datetime
 import logging
 
 import openmeteo_requests
@@ -40,6 +40,62 @@ class OMReader:
         time_forecast: str = "0d",
         now_date=None,
     ) -> tuple[bool, dict]:
+
+        def check_normalize_timeline(
+            time_depth: str,
+            time_type: str,  # "past" | "prerast",
+            datetime_ranges: dict,  # station["om_time_range_past"],
+            timelines: dict,  # station["om_time_past"],
+            parameters: dict,  # station["om_parameters"]
+        ):
+            logging.info(
+                "[%s] Проверка данных: должны быть ежечасными. Если какого-то часа не хватает, то добавляется None",
+                time_type,
+            )
+
+            # dt_range = [
+            #     datetime_ranges[time_depth][0].replace(
+            #         minute=0, second=0, microsecond=0
+            #     )
+            #     + datetime.timedelta(hours=1),
+            #     datetime_ranges[time_depth][1].replace(
+            #         minute=0, second=0, microsecond=0
+            #     ),
+            # ]
+            dt_range = datetime_ranges
+
+            hours_diff = ((dt_range[1] - dt_range[0]).days + 1) * 24
+            tl_ref = [
+                dt_range[0] + datetime.timedelta(hours=dh) for dh in range(hours_diff)
+            ]
+            tl = timelines[time_depth]
+
+            missed_idx = []
+
+            for idx, val in enumerate(tl_ref):
+                if idx < len(tl):
+                    if (tl[idx] != tl_ref[idx]) and (tl[idx] > tl_ref[idx]):
+                        tl.insert(idx, val)
+                        missed_idx.append(idx)
+                else:
+                    tl.append(val)
+                    missed_idx.append(idx)
+            timelines[time_depth] = tl
+
+            if missed_idx:
+                for par_name, par_info in parameters.items():
+                    for idx in missed_idx:
+                        if idx < len(par_info[time_type][time_depth]):
+                            par_info[time_type][time_depth].insert(idx, None)
+                        else:
+                            par_info[time_type][time_depth].append(None)
+
+            logging.info(
+                "[%s] Добавлено моментов времени: %d", time_depth, len(missed_idx)
+            )
+
+            return timelines, parameters
+
         logging.info(
             "Считываю данные моделирования с Open-Meteo для станции %s (%s)",
             station["code"],
@@ -140,6 +196,17 @@ class OMReader:
                 responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
             )
 
+        # Проверка данных на ежечасность
+        om_time_past_corr, om_parameters = check_normalize_timeline(
+            time_depth,
+            "past",
+            station["om_time_range_past"],
+            station["om_time_past"],
+            station["om_parameters"],
+        )
+        station["om_time_past"] = om_time_past_corr
+        station["om_parameters"] = om_parameters
+
         # 2) отдельно выделить значение recent (уже считаны) -> разложить в словарь station
         try:
             idx = station["om_time_past"][time_depth].index(
@@ -200,7 +267,7 @@ class OMReader:
                 )
                 return False, station
 
-            date_future_end = station["db_time_past"]["recent"] + timedelta(
+            date_future_end = station["db_time_past"]["recent"] + datetime.timedelta(
                 days=int(time_forecast[:-1])
             )
             try:
@@ -229,5 +296,16 @@ class OMReader:
                 station["om_parameters"][om_par]["future"][time_forecast] = (
                     responses[0].Hourly().Variables(idx).ValuesAsNumpy().tolist()[idx_start : idx_end + 1]  # type: ignore
                 )
+
+            # Проверка данных на ежечасность
+            om_time_future_corr, om_parameters = check_normalize_timeline(
+                time_forecast,
+                "future",
+                station["om_time_range_future"],
+                station["om_time_future"],
+                station["om_parameters"],
+            )
+            station["om_time_future"] = om_time_future_corr
+            station["om_parameters"] = om_parameters
 
         return True, station
