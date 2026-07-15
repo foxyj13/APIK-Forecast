@@ -2,6 +2,8 @@ import datetime
 import logging
 import time
 
+import numpy as np
+from scipy import interpolate
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import NoResultFound
@@ -47,14 +49,14 @@ class DBReader:
         self, station: dict, time_depth: str = "7d", now_date=None
     ) -> dict:
 
-        def check_normalize_timeline(
+        def timeline_to_hourly(
             time_depth: str,
             datetime_ranges: dict,  # result["db_time_range_past"],
             timelines: dict,  # result["db_time_past"],
             parameters: dict,  # station["parameters"],
         ):
             logging.info(
-                "Проверка данных: должны быть ежечасными. Если какого-то часа не хватает, то добавляется None"
+                "Преобразование данных к ежечасным: выбирается ближайшее к полному часу значение"
             )
 
             tds = ["c_yr", "365d", "30d", "14d", "7d", "3d", "1d"]
@@ -77,32 +79,30 @@ class DBReader:
                 dt_start = datetime_ranges[td_val][0].replace(
                     minute=0, second=0, microsecond=0
                 ) + datetime.timedelta(hours=1)
-                tl_ref = timeline_ref[timeline_ref.index(dt_start) :]
-                tl = timelines[td_val]
+                td_timeline_ref = timeline_ref[timeline_ref.index(dt_start) :]
+                timeline_orig = timelines[td_val]
 
-                missed_idx = []
+                td_timeline_timestamp_ref = [
+                    time_val.timestamp() for time_val in td_timeline_ref
+                ]
+                timeline_timestamp_orig = [
+                    time_val.timestamp() for time_val in timeline_orig
+                ]
 
-                for idx, val in enumerate(tl_ref):
-                    if idx < len(tl):
-                        if (tl[idx] != tl_ref[idx]) and (tl[idx] > tl_ref[idx]):
-                            tl.insert(idx, val)
-                            missed_idx.append(idx)
-                    else:
-                        tl.append(val)
-                        missed_idx.append(idx)
-                timelines[td_val] = tl
+                timelines[td_val] = td_timeline_ref
 
-                if missed_idx:
-                    for par_name, par_info in parameters.items():
-                        for idx in missed_idx:
-                            if idx < len(par_info["data"][td_val]):
-                                par_info["data"][td_val].insert(idx, None)
-                            else:
-                                par_info["data"][td_val].append(None)
+                for par_name, par_info in parameters.items():
+                    data_orig = par_info["data"][td_val]
 
-                logging.info(
-                    "[%s] Добавлено моментов времени: %d", td_val, len(missed_idx)
-                )
+                    to_hourly = interpolate.interp1d(
+                        x=timeline_timestamp_orig,
+                        y=data_orig,
+                        kind="nearest",
+                        bounds_error=False,
+                        fill_value=np.nan,
+                        assume_sorted=True,
+                    )
+                    par_info["data"][td_val] = to_hourly(td_timeline_timestamp_ref)
 
             return timelines, parameters
 
@@ -209,10 +209,10 @@ class DBReader:
                 "7d": [],
                 "3d": [],
                 "1d": [],
-                "recent": datetime.datetime.fromtimestamp(
-                    rows[-1].time, tz=datetime.timezone.utc
-                )
-                + station_timeshift,
+                # "recent": datetime.datetime.fromtimestamp(
+                #     rows[-1].time, tz=datetime.timezone.utc
+                # )
+                # + station_timeshift,
             }
             result["db_time_range_past"] = {
                 "c_yr": [
@@ -326,7 +326,7 @@ class DBReader:
                         ):
                             parameter["data"]["1d"].append(row_value)
 
-                db_time_past, parameters = check_normalize_timeline(
+                db_time_past, parameters = timeline_to_hourly(
                     time_depth,
                     result["db_time_range_past"],
                     result["db_time_past"],
@@ -335,10 +335,12 @@ class DBReader:
                 result["db_time_past"] = db_time_past
                 station["parameters"] = parameters
 
+            result["db_time_past"]["recent"] = result["db_time_past"]["1d"][-1]
             for parameter in station["parameters"].values():
-                parameter["data"]["recent"] = self._fix_value(
-                    rows[-1]._mapping[parameter["name"]], parameter["no_value"]
-                )
+                parameter["data"]["recent"] = parameter["data"]["1d"][-1]
+                # parameter["data"]["recent"] = self._fix_value(
+                #     rows[-1]._mapping[parameter["name"]], parameter["no_value"]
+                # )
         else:
             logging.error(
                 "ОШИБКА! Станции с кодом %s в БД не обнаружено!", station["code"]
@@ -350,7 +352,7 @@ class DBReader:
         self, station: dict, time_depth: str, time_forecast: str, now_date=None
     ) -> tuple[bool, dict]:
 
-        def check_normalize_timeline(
+        def timeline_to_hourly(
             time_depth: str,
             past_type: str,  # "past" | "prerast",
             datetime_ranges: dict,  # station["om_time_range_past"],
@@ -358,7 +360,7 @@ class DBReader:
             parameters: dict,  # station["om_parameters"]
         ):
             logging.info(
-                "[%s] Проверка данных: должны быть ежечасными. Если какого-то часа не хватает, то добавляется None",
+                "[%s] Преобразование данных к ежечасным: выбирается ближайшее к полному часу значение",
                 past_type,
             )
 
@@ -373,39 +375,35 @@ class DBReader:
             ]
 
             hours_diff = ((dt_range[1] - dt_range[0]).days + 1) * 24
-            tl_ref = [
+            timeline_ref = [
                 dt_range[0] + datetime.timedelta(hours=dh) for dh in range(hours_diff)
             ]
-            tl = timelines[time_depth]
+            timeline_orig = timelines[time_depth]
 
-            missed_idx = []
+            timeline_timestamp_ref = [time_val.timestamp() for time_val in timeline_ref]
+            timeline_timestamp_orig = [
+                time_val.timestamp() for time_val in timeline_orig
+            ]
 
-            for idx, val in enumerate(tl_ref):
-                if idx < len(tl):
-                    if (tl[idx] != tl_ref[idx]) and (tl[idx] > tl_ref[idx]):
-                        tl.insert(idx, val)
-                        missed_idx.append(idx)
-                else:
-                    tl.append(val)
-                    missed_idx.append(idx)
-            timelines[time_depth] = tl
+            timelines[time_depth] = timeline_ref
 
-            if missed_idx:
-                for par_name, par_info in parameters.items():
-                    for idx in missed_idx:
-                        if idx < len(par_info[past_type][time_depth]):
-                            par_info[past_type][time_depth].insert(idx, None)
-                        else:
-                            par_info[past_type][time_depth].append(None)
+            for par_name, par_info in parameters.items():
+                data_orig = par_info[past_type][time_depth]
 
-            logging.info(
-                "[%s] Добавлено моментов времени: %d", time_depth, len(missed_idx)
-            )
+                to_hourly = interpolate.interp1d(
+                    x=timeline_timestamp_orig,
+                    y=data_orig,
+                    kind="nearest",
+                    bounds_error=False,
+                    fill_value=np.nan,
+                    assume_sorted=True,
+                )
+                par_info[past_type][time_depth] = to_hourly(timeline_timestamp_ref)
 
             return timelines, parameters
 
         logging.info(
-            "Дополнительное считывание данных из БД для статистического прогнозадля станции %s (%s)",
+            "Дополнительное считывание данных из БД для статистического прогноза для станции %s (%s)",
             station["code"],
             station["full_name"],
         )
@@ -496,22 +494,22 @@ class DBReader:
             station["om_time_prepast"] = {time_depth: []}
             station["om_time_past"] = {
                 time_depth: [],
-                "recent": datetime.datetime.fromtimestamp(
-                    rows_past[-1].time, tz=datetime.timezone.utc
-                )
-                + station_timeshift,
+                # "recent": datetime.datetime.fromtimestamp(
+                #     rows_past[-1].time, tz=datetime.timezone.utc
+                # )
+                # + station_timeshift,
             }
 
-            station["om_time_future"] = {}
-            station["om_time_future"][time_forecast] = [
-                station["om_time_past"]["recent"] + datetime.timedelta(hours=hh + 1)
-                for hh in range(int(time_forecast[:-1]) * 24)
-            ]
-            station["om_time_range_future"] = {}
-            station["om_time_range_future"] = [
-                station["om_time_future"][time_forecast][0],
-                station["om_time_future"][time_forecast][-1],
-            ]
+            # station["om_time_future"] = {}
+            # station["om_time_future"][time_forecast] = [
+            #     station["om_time_past"]["recent"] + datetime.timedelta(hours=hh + 1)
+            #     for hh in range(int(time_forecast[:-1]) * 24)
+            # ]
+            # station["om_time_range_future"] = {}
+            # station["om_time_range_future"] = [
+            #     station["om_time_future"][time_forecast][0],
+            #     station["om_time_future"][time_forecast][-1],
+            # ]
 
             station["om_time_range_prepast"] = {}
             station["om_time_range_past"] = {}
@@ -573,7 +571,7 @@ class DBReader:
                         }
 
             # check
-            om_time_prepast, om_parameters = check_normalize_timeline(
+            om_time_prepast, om_parameters = timeline_to_hourly(
                 time_depth,
                 "prepast",
                 station["om_time_range_prepast"],
@@ -583,7 +581,7 @@ class DBReader:
             station["om_time_prepast"] = om_time_prepast
             station["om_parameters"] = om_parameters
 
-            om_time_past, om_parameters = check_normalize_timeline(
+            om_time_past, om_parameters = timeline_to_hourly(
                 time_depth,
                 "past",
                 station["om_time_range_past"],
@@ -593,10 +591,26 @@ class DBReader:
             station["om_time_past"] = om_time_past
             station["om_parameters"] = om_parameters
 
+            station["om_time_past"]["recent"] = station["om_time_past"][time_depth][-1]
+
+            station["om_time_future"] = {}
+            station["om_time_future"][time_forecast] = [
+                station["om_time_past"]["recent"] + datetime.timedelta(hours=hh + 1)
+                for hh in range(int(time_forecast[:-1]) * 24)
+            ]
+            station["om_time_range_future"] = {}
+            station["om_time_range_future"] = [
+                station["om_time_future"][time_forecast][0],
+                station["om_time_future"][time_forecast][-1],
+            ]
+
             for pred_name, pred_info in predictors.items():
-                station["om_parameters"][pred_name]["past"]["recent"] = self._fix_value(
-                    rows_past[-1]._mapping[pred_name], pred_info["no_value"]
-                )
+                station["om_parameters"][pred_name]["past"]["recent"] = station[
+                    "om_parameters"
+                ][pred_name]["past"][time_depth][-1]
+                # station["om_parameters"][pred_name]["past"]["recent"] = self._fix_value(
+                #     rows_past[-1]._mapping[pred_name], pred_info["no_value"]
+                # )
         else:
             logging.error(
                 "ОШИБКА! Станции с кодом %s в БД не обнаружено!", station["code"]
