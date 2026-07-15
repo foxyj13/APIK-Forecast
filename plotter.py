@@ -449,11 +449,15 @@ class Plotter:
 
             # Добавление глобального (сырого) прогноза
             if self.glob_forecast:
-                if "om_parameter" in parameter
-                and parameter["om_parameter"] in station["om_parameter"]:
+                if (
+                    "om_parameter" in parameter
+                    and parameter["om_parameter"] in station["om_parameter"]
+                ):
                     # Отрисовка исторического интервала прогноза
                     if "past" in station["om_parameter"][parameter["om_parameter"]]:
-                        y_glob_past = station["om_parameter"][parameter["om_parameter"]]["past"][time_depth]
+                        y_glob_past = station["om_parameter"][
+                            parameter["om_parameter"]
+                        ]["past"][time_depth]
                         ax.plot(
                             x_forecast_past,
                             y_glob_past,
@@ -463,7 +467,9 @@ class Plotter:
 
                     # Отрисовка прогноза вперед
                     if "future" in station["om_parameter"][parameter["om_parameter"]]:
-                        y_glob_future = station["om_parameter"][parameter["om_parameter"]]["future"][time_depth]
+                        y_glob_future = station["om_parameter"][
+                            parameter["om_parameter"]
+                        ]["future"][time_depth]
                         ax.plot(x_forecast_future, y_glob_future, "--", color="darkred")
 
             ax.set_ylabel(parameter["full_name"], size=13)
