@@ -1,5 +1,6 @@
 import logging
-from statistics import mean, median
+
+# from statistics import mean, median
 
 import numpy as np
 from scipy.stats import variation
@@ -19,10 +20,10 @@ class Validator:
     @staticmethod
     def _get_self_metrics(data: list) -> dict:
 
-        if data.count(None) / len(data) < 0.1:
+        if sum(np.isnan(data)) / len(data) < 0.1:
             result = {
-                "mean": mean(data),
-                "med": median(data),
+                "mean": np.nanmean(data),
+                "med": np.nanmedian(data),
                 "max": max(data),
                 "min": min(data),
             }
@@ -43,17 +44,17 @@ class Validator:
 
         def get_pearsonr(data_obs: list, data_mod: list) -> float:
 
-            mean_obs = mean(data_obs)
-            mean_mod = mean(data_mod)
+            mean_obs = np.nanmean(data_obs)
+            mean_mod = np.nanmean(data_mod)
 
             np_data_obs = np.asarray(data_obs)
             np_data_mod = np.asarray(data_mod)
 
-            top = np.sum((np_data_obs - mean_obs) * (np_data_mod - mean_mod))
+            top = np.nansum((np_data_obs - mean_obs) * (np_data_mod - mean_mod))
 
             bot = (
-                np.sum(np.power(np_data_obs - mean_obs, 2))
-                * np.sum(np.power(np_data_mod - mean_mod, 2))
+                np.nansum(np.power(np_data_obs - mean_obs, 2))
+                * np.nansum(np.power(np_data_mod - mean_mod, 2))
             ) ** 0.5
 
             return top / bot
@@ -62,34 +63,39 @@ class Validator:
             np_data_obs = np.asarray(data_obs)
             np_data_mod = np.asarray(data_mod)
 
-            top = np.sum(np.power(np_data_mod - np_data_obs, 2))
-            bot = np.sum(np.power(np_data_obs - mean(data_obs), 2))
+            top = np.nansum(np.power(np_data_mod - np_data_obs, 2))
+            bot = np.nansum(np.power(np_data_obs - np.nanmean(data_obs), 2))
 
             return 1 - top / bot
 
         if time_obs == time_mod:
-            if (data_obs.count(None) / len(data_obs) < 0.1) and (
-                data_mod.count(None) / len(data_mod) < 0.1
+            if (sum(np.isnan(data_obs)) / len(data_obs) < 0.1) and (
+                sum(np.isnan(data_mod)) / len(data_mod) < 0.1
             ):
 
                 nse = get_nse(data_obs, data_mod)
 
                 pearsonr = get_pearsonr(data_obs, data_mod)
-                alpha = variation(data_mod) / variation(data_obs)
-                betta = mean(data_mod) / mean(data_obs)
+                alpha = variation(data_mod, nan_policy="omit") / variation(
+                    data_obs, nan_policy="omit"
+                )
+                betta = np.nanmean(data_mod) / np.nanmean(data_obs)
                 kge = (
                     1
                     - ((pearsonr - 1) ** 2 + (betta - 1) ** 2 + (alpha - 1) ** 2) ** 0.5
                 )
 
+                idx_notnan = ~np.isnan(data_obs) * ~np.isnan(data_mod)
+                data_obs_np = np.array(data_obs)[idx_notnan]
+                data_mod_np = np.array(data_mod)[idx_notnan]
                 result = {
-                    "rmse": root_mean_squared_error(data_obs, data_mod),
-                    "r2": r2_score(data_obs, data_mod),
-                    "me": mean(
+                    "rmse": root_mean_squared_error(data_obs_np, data_mod_np),
+                    "r2": r2_score(data_obs_np, data_mod_np),
+                    "me": np.nanmean(
                         [data_mod[idx] - data_obs[idx] for idx in range(len(data_obs))]
                     ),
-                    "mae": mean_absolute_error(data_obs, data_mod),
-                    "mre": mean_absolute_percentage_error(data_obs, data_mod),
+                    "mae": mean_absolute_error(data_obs_np, data_mod_np),
+                    "mre": mean_absolute_percentage_error(data_obs_np, data_mod_np),
                     "nse": nse,
                     "kge": kge,
                 }
@@ -128,36 +134,36 @@ class Validator:
             parameter["metrics"] = {}
 
             # Расчет метрик для наблюдений
-            if ("data" in parameter) and parameter["data"][self.time_depth]:
+            if ("data" in parameter) and (parameter["data"][self.time_depth]):
                 parameter["metrics"]["obs"] = self._get_self_metrics(
                     parameter["data"][self.time_depth]
                 )
 
             # Расчет метрик для прогноза
-            if ("om_data_glob" in parameter) and parameter["om_data_glob"]["past"][
-                self.time_depth
-            ]:
+            if ("om_data_glob" in parameter) and (
+                parameter["om_data_glob"]["past"][self.time_depth]
+            ):
                 parameter["metrics"]["glob_past"] = self._get_self_metrics(
                     parameter["om_data_glob"]["past"][self.time_depth]
                 )
 
-                if ("om_data_glob" in parameter) and parameter["om_data_glob"][
-                    "future"
-                ][self.time_forecast]:
+                if ("om_data_glob" in parameter) and (
+                    parameter["om_data_glob"]["future"][self.time_forecast]
+                ):
                     parameter["metrics"]["glob_future"] = self._get_self_metrics(
                         parameter["om_data_glob"]["future"][self.time_forecast]
                     )
 
-                if ("om_data_local" in parameter) and parameter["om_data_local"][
-                    "past"
-                ][self.time_depth]:
+                if ("om_data_local" in parameter) and (
+                    parameter["om_data_local"]["past"][self.time_depth]
+                ):
                     parameter["metrics"]["local_past"] = self._get_self_metrics(
                         parameter["om_data_local"]["past"][self.time_depth]
                     )
 
-                if ("om_data_local" in parameter) and parameter["om_data_local"][
-                    "future"
-                ][self.time_forecast]:
+                if ("om_data_local" in parameter) and (
+                    parameter["om_data_local"]["future"][self.time_forecast]
+                ):
                     parameter["metrics"]["local_future"] = self._get_self_metrics(
                         parameter["om_data_local"]["future"][self.time_forecast]
                     )
@@ -165,8 +171,8 @@ class Validator:
             # Расчет совместных метрик наблюдения vs глобальный прогноз
             if (
                 ("om_data_glob" in parameter)
-                and parameter["om_data_glob"]["past"][self.time_depth]
-                and parameter["data"][self.time_depth]
+                and (parameter["om_data_glob"]["past"][self.time_depth])
+                and (parameter["data"][self.time_depth])
             ):
                 parameter["metrics"]["obs_glob"] = self._get_mutual_metrics(
                     station["db_time_past"][self.time_depth],
@@ -178,8 +184,8 @@ class Validator:
             # Расчет совместных метрик наблюдения vs локальный прогноз
             if (
                 ("om_data_local" in parameter)
-                and parameter["om_data_local"]["past"][self.time_depth]
-                and parameter["data"][self.time_depth]
+                and (parameter["om_data_local"]["past"][self.time_depth])
+                and (parameter["data"][self.time_depth])
             ):
                 parameter["metrics"]["obs_local"] = self._get_mutual_metrics(
                     station["db_time_past"][self.time_depth],
