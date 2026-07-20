@@ -102,7 +102,9 @@ class DBReader:
                         fill_value=np.nan,
                         assume_sorted=True,
                     )
-                    par_info["data"][td_val] = to_hourly(td_timeline_timestamp_ref)
+                    par_info["data"][td_val] = list(
+                        to_hourly(td_timeline_timestamp_ref)
+                    )
 
             return timelines, parameters
 
@@ -337,10 +339,10 @@ class DBReader:
 
             result["db_time_past"]["recent"] = result["db_time_past"]["1d"][-1]
             for parameter in station["parameters"].values():
-                parameter["data"]["recent"] = parameter["data"]["1d"][-1]
-                # parameter["data"]["recent"] = self._fix_value(
-                #     rows[-1]._mapping[parameter["name"]], parameter["no_value"]
-                # )
+                #parameter["data"]["recent"] = parameter["data"]["1d"][-1]
+                parameter["data"]["recent"] = self._fix_value(
+                    rows[-1]._mapping[parameter["name"]], parameter["no_value"]
+                )
         else:
             logging.error(
                 "ОШИБКА! Станции с кодом %s в БД не обнаружено!", station["code"]
@@ -398,7 +400,9 @@ class DBReader:
                     fill_value=np.nan,
                     assume_sorted=True,
                 )
-                par_info[past_type][time_depth] = to_hourly(timeline_timestamp_ref)
+                par_info[past_type][time_depth] = list(
+                    to_hourly(timeline_timestamp_ref)
+                )
 
             return timelines, parameters
 
@@ -599,7 +603,7 @@ class DBReader:
                 for hh in range(int(time_forecast[:-1]) * 24)
             ]
             station["om_time_range_future"] = {}
-            station["om_time_range_future"] = [
+            station["om_time_range_future"][time_forecast] = [
                 station["om_time_future"][time_forecast][0],
                 station["om_time_future"][time_forecast][-1],
             ]
