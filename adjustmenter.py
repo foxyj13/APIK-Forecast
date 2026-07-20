@@ -94,10 +94,8 @@ class Adjustmenter:
         ml_models["Ridge"] = {}
         ml_models["Ridge"]["cls"] = Ridge
         ml_models["Ridge"]["param_grid"] = {
-            # Сила регуляризации: от очень слабой (0.01) до экстремально сильной (1000)
-            "alpha": np.logspace(
-                -3, 3, 7
-            ),  # [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+            # Сила регуляризации: от очень слабой (0.01) до очень сильной (100)
+            "alpha": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
             # Расчет свободного коэффициента
             "fit_intercept": [True, False],
             # Алгоритм решения оптимизационной задачи.
@@ -111,13 +109,15 @@ class Adjustmenter:
         ml_models["Lasso"]["cls"] = Lasso
         ml_models["Lasso"]["param_grid"] = {
             # Коэффициент силы регуляризации (от слабой к сильной)
-            "alpha": np.logspace(
-                -4, 2, 7
-            ),  # [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+            "alpha": [0.001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
             # Нужно ли рассчитывать свободный коэффициент
             "fit_intercept": [True, False],
             # Максимальное число итераций (для Lasso важно, так как оно сходится дольше)
-            "max_iter": [1000, 5000],
+            "max_iter": [500, 1000, 2000],
+            # При "random" на каждой итерации выбирается случайный коэффициент для обновления,
+            # в отличие от стандартного последовательного перебора признаков.
+            # Такой подход (выбор режима «random») часто обеспечивает значительно более быструю сходимость
+            "selection": ["cyclic", "random"],
         }  # Для подбора alpha лучше использовать LassoCV вместо стандартного GridSearchCV
         ml_models["Lasso"]["default_params"] = {}
 
@@ -125,16 +125,18 @@ class Adjustmenter:
         ml_models["ElasticNet"]["cls"] = ElasticNet
         ml_models["ElasticNet"]["param_grid"] = {
             # Общая сила штрафа
-            "alpha": np.logspace(
-                -4, 2, 7
-            ),  # [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+            "alpha": [0.001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
             # Доля L1 (Lasso) штрафа.
             # При 0.0 — это чистый Ridge, при 1.0 — чистый Lasso.
             "l1_ratio": [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99],
             # Нужно ли рассчитывать свободный коэффициент
             "fit_intercept": [True, False],
             # Максимальное число итераци
-            "max_iter": [1000, 5000],
+            "max_iter": [500, 1000, 2000],
+            # При "random" на каждой итерации выбирается случайный коэффициент для обновления,
+            # в отличие от стандартного последовательного перебора признаков.
+            # Такой подход (выбор режима «random») часто обеспечивает значительно более быструю сходимость
+            "selection": ["cyclic", "random"],
         }
         ml_models["ElasticNet"]["default_params"] = {}
 
@@ -142,25 +144,25 @@ class Adjustmenter:
         ml_models["KNeighborsRegressor"]["cls"] = KNeighborsRegressor
         ml_models["KNeighborsRegressor"]["param_grid"] = {
             # Количество соседей
-            "n_neighbors": [5, 7, 10, 13, 15],
+            "n_neighbors": [3, 5, 7, 10],
             # Весовая функция
             "weights": ["uniform", "distance"],
+            # Алгоритм для выбора ближайшего соседа
+            "algorithm": ["ball_tree", "kd_tree", "brute", "auto"],
             # Метрика расстояния
             "metric": ["euclidean", "manhattan", "minkowski"],
-            # Степенной параметр для метрики Минковского
-            "p": [1, 2],
         }
         ml_models["KNeighborsRegressor"]["default_params"] = {}
 
         ml_models["DecisionTreeRegressor"] = {}
         ml_models["DecisionTreeRegressor"]["cls"] = DecisionTreeRegressor
         ml_models["DecisionTreeRegressor"]["param_grid"] = {
+            # Функция для оценки качества расщепления
+            "criterion": ["squared_error", "absolute_error", "poisson"],
+            # Стратегия расщепления
+            "splitter": ["best", "random"],
             # Максимальная глубина дерева
             "max_depth": [None, 3, 5, 10],
-            # Максимальное количество признаков для поиска разбиения
-            "max_features": [None, "auto", "sqrt", "log2", 0.5],
-            # Критерий качества расщепления
-            "criterion": ["squared_error", "friedman_mse", "absolute_error"],
         }
         ml_models["DecisionTreeRegressor"]["default_params"] = {}
 
@@ -168,59 +170,71 @@ class Adjustmenter:
         ml_models["RandomForestRegressor"]["cls"] = RandomForestRegressor
         ml_models["RandomForestRegressor"]["param_grid"] = {
             # Количество генерируемых деревьев
-            "n_estimators": [10, 50, 100, 200, 500],
+            "n_estimators": [10, 50, 100, 200, 300],
+            # Функция для оценки качества расщепления
+            "criterion": ["squared_error", "absolute_error", "poisson"],
             # Максимальная глубина дерева
             "max_depth": [None, 2, 5, 10],
-            # Максимальное количество признаков для поиска разбиения
-            "max_features": [None, "auto", "sqrt", "log2"],
+            # Использовать бутстрап-подвыборки или всю выборку
+            "bootstrap": [True, False],
         }
         ml_models["RandomForestRegressor"]["default_params"] = {}
 
         ml_models["GradientBoostingRegressor"] = {}
         ml_models["GradientBoostingRegressor"]["cls"] = GradientBoostingRegressor
         ml_models["GradientBoostingRegressor"]["param_grid"] = {
-            # Количество деревьев
-            "n_estimators": [10, 50, 100, 200, 500],
+            # Loss-функция
+            "loss": ["squared_error", "absolute_error", "huber", "quantile"],
             # Скорость обучения
-            "learning_rate": [0.01, 0.05, 0.1, 0.2],
-            # Максимальная глубина каждого дерева
-            "max_depth": [None, 2, 5, 10],
+            "learning_rate": [0.05, 0.1, 0.2],
+            # Количество этапов бустинга для выполнения
+            "n_estimators": [10, 50, 100, 200, 300],
             # Доля выборки для обучения одного дерева
-            "subsample": [0.7, 0.8, 0.9, 1.0],
-            # Ограничение признаков
-            "max_features": [None, "sqrt", 0.8],
+            "subsample": [0.8, 1.0],
+            # Максимальная глубина каждого дерева
+            "max_depth": [None, 2, 3, 5],
         }
         ml_models["GradientBoostingRegressor"]["default_params"] = {}
 
         ml_models["LGBMRegressor"] = {}
         ml_models["LGBMRegressor"]["cls"] = LGBMRegressor
         ml_models["LGBMRegressor"]["param_grid"] = {
-            # Количество деревьев
-            "n_estimators": [10, 50, 100, 200, 500],
+            # Тип бустинга:
+            # gbdt - traditional Gradient Boosting Decision Tree;
+            # dart - Dropouts meet Multiple Additive Regression Trees;
+            # rf - Random Forest
+            # "boosting_type": ["gbdt", "dart", "rf"],
+            # Максимальная глубина каждого дерева
+            "max_depth": [-1, 2, 5],
             # Скорость обучения
             "learning_rate": [0.01, 0.05, 0.1, 0.2],
-            # Максимальная глубина каждого дерева
-            "max_depth": [None, 2, 5, 10],
-            # Коэффициент случайной субвыборки признаков
-            "colsample_bytree": [0.8, 1.0],
+            # Количество этапов бустинга (деревьев) для выполнения
+            "n_estimators": [10, 50, 100, 200, 300],
+            # Доля выборки для обучения одного дерева
+            "subsample": [0.8, 1.0],
+            # Вес L1-регуляризационного члена
+            "reg_alpha": [0.0, 0.01, 0.1, 0.3],
+            # Вес L2-регуляризационного члена
+            "reg_lambda": [0.0, 0.01, 0.1, 0.3],
         }
         ml_models["LGBMRegressor"]["default_params"] = {}
 
         ml_models["XGBRegressor"] = {}
         ml_models["XGBRegressor"]["cls"] = XGBRegressor
         ml_models["XGBRegressor"]["param_grid"] = {
-            # Количество деревьев
-            "n_estimators": [10, 50, 100, 200, 500],
+            # Тип бустинга:
+            # gbtree - traditional Gradient Boosting Decision Tree;
+            # dart - Dropouts meet Multiple Additive Regression Trees;
+            # gblinear - linear functions
+            # "booster": ["gbtree", "gblinear", "dart"],
+            # Количество этапов бустинга (деревьев) для выполнения
+            "n_estimators": [10, 50, 100, 200, 300],
             # Скорость обучения
-            "learning_rate": [0.01, 0.05, 0.1, 0.2],
+            "learning_rate": [0.01, 0.05, 0.1, 0.3],
             # Максимальная глубина каждого дерева
-            "max_depth": [None, 2, 5, 10],
-            # Минимальное снижение ошибки для создания нового расщепления (регуляризация)
-            "gamma": [0, 0.1, 0.2],
+            "max_depth": [2, 3, 5, 6],
             # Доля строк (данных) для обучения одного дерева
             "subsample": [0.8, 1.0],
-            # Коэффициент случайной субвыборки признаков
-            "colsample_bytree": [0.8, 1.0],
         }
         ml_models["XGBRegressor"]["default_params"] = {}
 
