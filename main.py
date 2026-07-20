@@ -224,6 +224,16 @@ def main():
     logging.info("Начинаем работу!")
 
     logging.info("Проверка сочетания значений входных ключей программы")
+
+    if int(time_depth[:-1]) < int(time_forecast[:-1]):
+        time_forecast = time_depth
+        logging.warning(
+            "Значение time_depth (%s) должно быть больше или равно time_forecast (%s). Значение time_forecast изменено на %s",
+            time_depth,
+            time_forecast,
+            time_depth,
+        )
+
     if ((mode == "forec_adj") or (mode == "forec_stat")) and (time_forecast == "0d"):
         logging.error(
             "Ошибка сочетания значений входных ключей программы: при --mode=forec_adj значение для --time-forecast должно быть БОЛЬШЕ 0d"
