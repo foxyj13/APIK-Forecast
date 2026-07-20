@@ -3,9 +3,11 @@ import datetime
 import logging
 
 import openmeteo_requests
+import numpy as np
 import pandas as pd
 import requests_cache
 from retry_requests import retry
+from scipy import interpolate
 
 # from timezonefinder import TimezoneFinder
 
@@ -41,58 +43,56 @@ class OMReader:
         now_date=None,
     ) -> tuple[bool, dict]:
 
-        def check_normalize_timeline(
+        def timeline_to_hourly(
             time_depth: str,
-            time_type: str,  # "past" | "prerast",
+            time_type: str,  # "past" | "future",
             datetime_ranges: dict,  # station["om_time_range_past"],
             timelines: dict,  # station["om_time_past"],
             parameters: dict,  # station["om_parameters"]
         ):
             logging.info(
-                "[%s] Проверка данных: должны быть ежечасными. Если какого-то часа не хватает, то добавляется None",
+                "[%s] Преобразование данных к ежечасным: выбирается ближайшее к полному часу значение",
                 time_type,
             )
 
-            # dt_range = [
-            #     datetime_ranges[time_depth][0].replace(
-            #         minute=0, second=0, microsecond=0
-            #     )
-            #     + datetime.timedelta(hours=1),
-            #     datetime_ranges[time_depth][1].replace(
-            #         minute=0, second=0, microsecond=0
-            #     ),
-            # ]
-            dt_range = datetime_ranges
+            dt_range = [
+                datetime_ranges[time_depth][0].replace(
+                    minute=0, second=0, microsecond=0
+                )
+                + datetime.timedelta(hours=1),
+                datetime_ranges[time_depth][1].replace(
+                    minute=0, second=0, microsecond=0
+                ),
+            ]
+            # dt_range = datetime_ranges
 
             hours_diff = ((dt_range[1] - dt_range[0]).days + 1) * 24
-            tl_ref = [
+            timeline_ref = [
                 dt_range[0] + datetime.timedelta(hours=dh) for dh in range(hours_diff)
             ]
-            tl = timelines[time_depth]
+            timeline_orig = timelines[time_depth]
 
-            missed_idx = []
+            timeline_timestamp_ref = [time_val.timestamp() for time_val in timeline_ref]
+            timeline_timestamp_orig = [
+                time_val.timestamp() for time_val in timeline_orig
+            ]
 
-            for idx, val in enumerate(tl_ref):
-                if idx < len(tl):
-                    if (tl[idx] != tl_ref[idx]) and (tl[idx] > tl_ref[idx]):
-                        tl.insert(idx, val)
-                        missed_idx.append(idx)
-                else:
-                    tl.append(val)
-                    missed_idx.append(idx)
-            timelines[time_depth] = tl
+            timelines[time_depth] = timeline_ref
 
-            if missed_idx:
-                for par_name, par_info in parameters.items():
-                    for idx in missed_idx:
-                        if idx < len(par_info[time_type][time_depth]):
-                            par_info[time_type][time_depth].insert(idx, None)
-                        else:
-                            par_info[time_type][time_depth].append(None)
+            for par_name, par_info in parameters.items():
+                data_orig = par_info[time_type][time_depth]
 
-            logging.info(
-                "[%s] Добавлено моментов времени: %d", time_depth, len(missed_idx)
-            )
+                to_hourly = interpolate.interp1d(
+                    x=timeline_timestamp_orig,
+                    y=data_orig,
+                    kind="nearest",
+                    bounds_error=False,
+                    fill_value=np.nan,
+                    assume_sorted=True,
+                )
+                par_info[time_type][time_depth] = list(
+                    to_hourly(timeline_timestamp_ref)
+                )
 
             return timelines, parameters
 
@@ -111,7 +111,7 @@ class OMReader:
             om_parameters_list = (
                 om_parameters_list
                 | set(par_info["om_predictors"])
-                | set(par_info["om_parameter"])
+                | {par_info["om_parameter"]}
             )
 
         om_parameters_list = [
@@ -197,7 +197,7 @@ class OMReader:
             )
 
         # Проверка данных на ежечасность
-        om_time_past_corr, om_parameters = check_normalize_timeline(
+        om_time_past_corr, om_parameters = timeline_to_hourly(
             time_depth,
             "past",
             station["om_time_range_past"],
@@ -298,7 +298,7 @@ class OMReader:
                 )
 
             # Проверка данных на ежечасность
-            om_time_future_corr, om_parameters = check_normalize_timeline(
+            om_time_future_corr, om_parameters = timeline_to_hourly(
                 time_forecast,
                 "future",
                 station["om_time_range_future"],
