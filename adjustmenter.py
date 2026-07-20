@@ -250,7 +250,12 @@ class Adjustmenter:
         #     # Фиксируем суточный цикл (при желании можно протестировать недельную сезонность - 168 часав, но она может не работать из-за недостатка данных для обучения модели)
         #     "seasonal_periods": [24],
         # }
-        ml_models["ExponentialSmoothing"]["default_params"] = {"seasonal_periods": 24}
+        ml_models["ExponentialSmoothing"]["default_params"] = {
+            "seasonal_periods": 24,
+            "seasonal": "add",
+            "trend": "add",
+            "damped_trend": True,
+        }
 
         ml_models["Holt"] = {}
         ml_models["Holt"]["cls"] = Holt
@@ -586,10 +591,14 @@ class Adjustmenter:
                 }
 
             idx_predictor_past_none = [
-                idx for idx, val_list in enumerate(predictor_past) if None in val_list
+                idx
+                for idx, val_list in enumerate(predictor_past)
+                if (None in val_list) or (np.any(np.isnan(val_list)))
             ]
             idx_predictor_future_none = [
-                idx for idx, val_list in enumerate(predictor_future) if None in val_list
+                idx
+                for idx, val_list in enumerate(predictor_future)
+                if (None in val_list) or (np.any(np.isnan(val_list)))
             ]
 
             idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
@@ -703,10 +712,14 @@ class Adjustmenter:
             }
 
         idx_predictor_past_none = [
-            idx for idx, val in enumerate(predictor_past) if val is None
+            idx
+            for idx, val in enumerate(predictor_past)
+            if (val is None) or (np.isnan(val))
         ]
         idx_predictor_future_none = [
-            idx for idx, val in enumerate(predictor_future) if val is None
+            idx
+            for idx, val in enumerate(predictor_future)
+            if (val is None) or (np.isnan(val))
         ]
 
         idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
@@ -785,7 +798,9 @@ class Adjustmenter:
         # status = -1: не указаны предикторы
         # status = -2: предикторов более, чем 1
 
-        idx_target_none = [idx for idx, val in enumerate(target) if val is None]
+        idx_target_none = [
+            idx for idx, val in enumerate(target) if (val is None) or (np.isnan(val))
+        ]
 
         if idx_target_none and len(idx_target_none) > len(target) / 10:
             common_models_set = {
@@ -968,14 +983,30 @@ class Adjustmenter:
                                 y_train, y_test
                             )
 
-                            result_predict[model_idx]["y_past_predict"] = (
+                            result_predict[model_idx]["y_past_predict"] = list(
                                 model.best_estimator_.predict(np.array(x_past_predict))
                             )
-                            result_predict[model_idx]["y_future_predict"] = (
+                            result_predict[model_idx]["y_future_predict"] = list(
                                 model.best_estimator_.predict(
                                     np.array(x_future_predict)
                                 )
                             )
+
+                            # Возвращение None на место, если они были
+                            for idx in train_predict_sets[model_type][
+                                "idx_predictor_past_none"
+                            ]:
+                                result_predict[model_idx]["y_past_predict"].insert(
+                                    idx, np.nan
+                                )
+
+                            for idx in train_predict_sets[model_type][
+                                "idx_predictor_future_none"
+                            ]:
+                                result_predict[model_idx]["y_future_predict"].insert(
+                                    idx, np.nan
+                                )
+
                         else:
                             logging_err_status(model_type)
                 else:
@@ -989,8 +1020,10 @@ class Adjustmenter:
                             if model_params_user:
                                 model = model_cls(
                                     x_train,
-                                    **self.ml_models[model_name]["default_params"],
-                                    **model_params_user
+                                    **(
+                                        self.ml_models[model_name]["default_params"]
+                                        | model_params_user
+                                    )
                                 ).fit()
                             else:
                                 model = model_cls(
@@ -1012,8 +1045,8 @@ class Adjustmenter:
                                 x_train, x_test
                             )
 
-                            result_predict[model_idx]["y_past_predict"] = x_test
-                            result_predict[model_idx]["y_future_predict"] = (
+                            result_predict[model_idx]["y_past_predict"] = list(x_test)
+                            result_predict[model_idx]["y_future_predict"] = list(
                                 model.forecast(
                                     steps=train_predict_sets[model_type]["len_future"]
                                 )
@@ -1064,12 +1097,28 @@ class Adjustmenter:
                                 y_train, y_test
                             )
 
-                            result_predict[model_idx]["y_past_predict"] = model.predict(
-                                np.array(x_past_predict)
+                            result_predict[model_idx]["y_past_predict"] = list(
+                                model.predict(np.array(x_past_predict))
                             )
-                            result_predict[model_idx]["y_future_predict"] = (
+                            result_predict[model_idx]["y_future_predict"] = list(
                                 model.predict(np.array(x_future_predict))
                             )
+
+                            # Возвращение None на место, если они были
+                            for idx in train_predict_sets[model_type][
+                                "idx_predictor_past_none"
+                            ]:
+                                result_predict[model_idx]["y_past_predict"].insert(
+                                    idx, np.nan
+                                )
+
+                            for idx in train_predict_sets[model_type][
+                                "idx_predictor_future_none"
+                            ]:
+                                result_predict[model_idx]["y_future_predict"].insert(
+                                    idx, np.nan
+                                )
+
                         else:
                             logging_err_status(model_type)
             except Exception as e:
@@ -1093,15 +1142,12 @@ class Adjustmenter:
                         key=lambda idx: result_predict[idx][best_result_metrics],
                     )
 
-                    # TODO перед записью в итоговый словарь нужно вернуть обратно пропуски, если выбран "common" и "base"
                     y_past_predict = result_predict[best_model_idx]["y_past_predict"]
                     y_future_predict = result_predict[best_model_idx][
                         "y_future_predict"
                     ]
 
                 elif get_result_way == "mean":
-                    # TODO перед расчетом среднего нужно вернуть обратно пропуски для "common" и "base"
-
                     y_past_predict = np.mean(
                         [
                             result_predict[idx]["y_past_predict"]
@@ -1146,7 +1192,7 @@ class Adjustmenter:
             time_recent = station["om_time_past"]["recent"]
             idx_recent = time_past.index(time_recent)
 
-            len_prepast = len(station["om_time_prepast"][self.time_depth])
+            # len_prepast = len(station["om_time_prepast"][self.time_depth])
             len_past = len(station["om_time_past"][self.time_depth])
             len_future = len(station["om_time_future"][self.time_forecast])
 
