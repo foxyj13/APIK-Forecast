@@ -30,7 +30,7 @@ def read_args():
         "--mode",
         help="Program mode (obs_plot | forec_adj):\n\tobs_plot - observations only plot only;\n\tforec_adj - get local forecasts and plot them and observations",
         type=str,
-        choices=["obs_plot", "forec_adj"],
+        choices=["obs_plot", "forec_adj", "forec_stat"],
         default="obs_plot",
     )
     parser.add_argument(
@@ -186,6 +186,7 @@ def main():
     mode = args.mode
     time_depth = args.time_depth
     time_forecast = args.time_forecast
+    add_globforecast_plot = args.add_globforecast_plot
     now_date = datetime.datetime.strptime(
         args.now_date, "%Y-%m-%d"
     ).date()  # args.now_date
@@ -223,12 +224,19 @@ def main():
     logging.info("Начинаем работу!")
 
     logging.info("Проверка сочетания значений входных ключей программы")
-    if (args.mode == "forec_adj") and (time_forecast == "0d"):
+    if ((mode == "forec_adj") or (mode == "forec_stat")) and (time_forecast == "0d"):
         logging.error(
             "Ошибка сочетания значений входных ключей программы: при --mode=forec_adj значение для --time-forecast должно быть БОЛЬШЕ 0d"
         )
         logging.info("Остановка программы")
         sys.exit(1)
+
+    if mode == "forec_stat":
+        if add_globforecast_plot == "yes":
+            logging.info(
+                "Глобальный прогноз отрисован не будет, т.к. задан расчет стат. прогноза (mode=forec_stat), а не уточнение глобального прогноза (mode=forec_adj)"
+            )
+            add_globforecast_plot = "no"
 
     if (args.qc_gen == "yes") and (now_date == now):
         logging.error(
@@ -240,9 +248,9 @@ def main():
     # ------------ Чтение перечня станций и перечня параметров для каждой станции ------------
     stations = read_stations(main_config["stations-file"])
 
-    # ----------- Если прогноз нужно корректировать: ------------
+    # ----------- Если прогноз нужно корректировать или рассчитывать стат. прогноз: ------------
     # Чтение конфигурационного файла для ML-блока (config_ml.ini)
-    if mode == "forec_adj":
+    if (mode == "forec_adj") or (mode == "forec_stat"):
         logging.info("Проверка наличия config_ml.ini")
         if not os.path.exists(main_config["ml-config-file"]):
             logging.error(
@@ -312,7 +320,9 @@ def main():
             )
             sys.exit(1)
 
-    if (mode == "forec_adj") or (args.add_globforecast_plot == "yes"):
+    if ((mode == "forec_adj") or (mode == "forec_stat")) or (
+        add_globforecast_plot == "yes"
+    ):
         # ------------ Чтение глобальных прогнозов ------------
         om_reader = OMReader(url=om_config["url"], model=om_config["model"])
 
@@ -323,15 +333,16 @@ def main():
             for station in stations:
                 status = False
 
-                # status, station = om_reader.get_model_data(
-                #     station=station,
-                #     time_depth=time_depth,
-                #     time_forecast=time_forecast,
-                #     now_date=now_date,
-                # )
+                if mode == "forec_adj":
+                    status, station = om_reader.get_model_data(
+                        station=station,
+                        time_depth=time_depth,
+                        time_forecast=time_forecast,
+                        now_date=now_date,
+                    )
 
                 if not status:
-                    logging.error("Глобальный прогноз не получен")
+                    logging.error("Глобальный прогноз не используется")
                     status, station = db_reader.get_station_predictors(
                         station=station,
                         time_depth=time_depth,
@@ -344,19 +355,17 @@ def main():
                         )
                         sys.exit(1)
 
-            # ------------ Если прогноз нужно корректировать ------------
-            if mode == "forec_adj":
+            # ------------ Если прогноз нужно корректировать или рассчитывать стат прогноз ------------
+            if (mode == "forec_adj") or (mode == "forec_stat"):
                 logging.info("Формируем локальные прогнозы")
 
                 for station in stations:
-                    # ------------ Корректировка глобальных прогнозов (ML-блок) (локальные прогнозы) ------------
-                    # Формирование обучающей выборки осуществляется внутри функции
-                    # Для каждой станции:
-                    #   - оставить внутри интервала прогноза только те моменты времени, что есть в наблюдениях
+                    # ------------ Корректировка глобальных прогнозов или расчет стат прогноза (ML-блок) ------------
+                    #       (локальные прогнозы)
                     station = ml_adjust.get_local_forecast(station)
 
                 # ------------ Вывод результата: отрисовка, экспорт, html ------------
-                if args.add_globforecast_plot == "yes":
+                if add_globforecast_plot == "yes":
                     # Отрисовка наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз
                     logging.info(
                         "Строим статичные графики: наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз"
@@ -368,7 +377,7 @@ def main():
                 else:
                     # Отрисовка наблюдения + локальный (уточненный) прогноз
                     logging.info(
-                        "Строим статичные графики: наблюдения + локальный (уточненный) прогноз"
+                        "Строим статичные графики: наблюдения + локальный прогноз"
                     )
 
                     plotter = Plotter(
