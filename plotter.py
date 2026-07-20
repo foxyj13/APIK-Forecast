@@ -146,7 +146,7 @@ class Plotter:
             else:
                 logging.info("Добавляю значения глобального (сырого) прогноза")
 
-        # plt.ioff()
+        plt.ioff()
 
         title_text = station["full_name"]
         fig_border = "steelblue"
@@ -179,10 +179,10 @@ class Plotter:
 
             if glob_forecast:
                 value_fc_glob = (
-                    f"{float(station['om_parameter'][parameter['om_parameter']]['past']['recent']):1.1f}"
+                    f"{float(station['om_parameters'][parameter['om_parameter']]['past']['recent']):1.1f}"
                     if "om_parameter" in parameter
-                    and parameter["om_parameter"] in station["om_parameter"]
-                    and station["om_parameter"][parameter["om_parameter"]]["past"][
+                    and parameter["om_parameter"] in station["om_parameters"]
+                    and station["om_parameters"][parameter["om_parameter"]]["past"][
                         "recent"
                     ]
                     is not None
@@ -246,7 +246,7 @@ class Plotter:
         )
         plt.close(fig)
 
-        # plt.ion()
+        plt.ion()
 
     def _make_plot(self, station: dict, time_scale: str):
         plt.ioff()  # Отключение интерактивного режима (чтобы окна при работе не мелькали)
@@ -387,7 +387,7 @@ class Plotter:
                 )
                 suffix_fglob = "_fglob"
 
-        # plt.ioff()  # Отключение интерактивного режима (чтобы окна при работе не мелькали)
+        plt.ioff()  # Отключение интерактивного режима (чтобы окна при работе не мелькали)
 
         footer_text = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
 
@@ -443,19 +443,19 @@ class Plotter:
                     # Отрисовка прогноза вперед
                     if "future" in parameter["om_data_local"]:
                         y_local_future = parameter["om_data_local"]["future"][
-                            time_depth
+                            time_forecast
                         ]
                         ax.plot(x_forecast_future, y_local_future, "--", color="green")
 
             # Добавление глобального (сырого) прогноза
-            if self.glob_forecast:
+            if glob_forecast:
                 if (
                     "om_parameter" in parameter
-                    and parameter["om_parameter"] in station["om_parameter"]
+                    and parameter["om_parameter"] in station["om_parameters"]
                 ):
                     # Отрисовка исторического интервала прогноза
-                    if "past" in station["om_parameter"][parameter["om_parameter"]]:
-                        y_glob_past = station["om_parameter"][
+                    if "past" in station["om_parameters"][parameter["om_parameter"]]:
+                        y_glob_past = station["om_parameters"][
                             parameter["om_parameter"]
                         ]["past"][time_depth]
                         ax.plot(
@@ -466,10 +466,10 @@ class Plotter:
                         )
 
                     # Отрисовка прогноза вперед
-                    if "future" in station["om_parameter"][parameter["om_parameter"]]:
-                        y_glob_future = station["om_parameter"][
+                    if "future" in station["om_parameters"][parameter["om_parameter"]]:
+                        y_glob_future = station["om_parameters"][
                             parameter["om_parameter"]
-                        ]["future"][time_depth]
+                        ]["future"][time_forecast]
                         ax.plot(x_forecast_future, y_glob_future, "--", color="darkred")
 
             ax.set_ylabel(parameter["full_name"], size=13)
@@ -527,4 +527,4 @@ class Plotter:
             )
             plt.close(fig)
 
-        # plt.ion()
+        plt.ion()
