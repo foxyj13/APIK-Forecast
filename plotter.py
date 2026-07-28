@@ -1,5 +1,6 @@
 import datetime
 import logging
+import math
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -13,8 +14,86 @@ class Plotter:
         self.export_enabled = config.get("export-enable", "false").lower() == "true"
         # self.export_enabled = config.getboolean("export-enable")
         # self.export_folder = config.get('csv-folder')
+
         self.glob_forecast = glob_forecast
         self.local_forecast = local_forecast
+
+        self.img_bw = config.get("images-bw", "false").lower() == "true"
+        if self.img_bw:
+            self.obs_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "marker": "o",
+                "markersize": 4,
+                "markevery": 4,
+                "color": "black",
+                "markeredgecolor": "black",
+                "markerfacecolor": "white",
+                # "linewidth": 5,
+                "label": "Наблюдения",
+            }
+            self.loc_past_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "color": "gray",
+                "label": "Локальный прогноз",
+            }
+            self.loc_future_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "linestyle": "--",
+                "color": "gray",
+            }
+            self.glob_past_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "color": "black",
+                "linewidth": 1,
+                "label": "Глобальный прогноз",
+            }
+            self.glob_future_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "linestyle": "--",
+                "color": "black",
+                "linewidth": 1,
+            }
+        else:
+            self.obs_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "marker": "o",
+                "markersize": 4,
+                "markevery": 4,
+                "color": "blue",
+                "markeredgecolor": "blue",
+                "markerfacecolor": "white",
+                "label": "Наблюдения",
+            }
+            self.loc_past_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "color": "forestgreen",
+                "label": "Локальный прогноз",
+            }
+            self.loc_future_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "linestyle": "--",
+                "color": "forestgreen",
+            }
+            self.glob_past_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "color": "darkred",
+                "label": "Глобальный прогноз",
+            }
+            self.glob_future_plot_kwargs = {
+                "scalex": True,
+                "scaley": True,
+                "linestyle": "--",
+                "color": "darkred",
+            }
 
     def export_to_csv(self, station: dict, time_depth: str):
 
@@ -129,7 +208,28 @@ class Plotter:
 
         plt.ion()
 
-    def make_table_forecast(self, station: dict):
+    @staticmethod
+    def _get_recent_idx(parameters: dict, time_depth: str) -> int:
+        def get_recent_value_idx(data: list) -> int:
+            return next(
+                (
+                    i
+                    for i, x in reversed(list(enumerate(data)))
+                    if isinstance(x, (int, float))
+                    and not (isinstance(x, float) and math.isnan(x))
+                ),
+                -1,
+            )
+
+        last_val_idxs = [
+            get_recent_value_idx(par_info["data"][time_depth])
+            for _, par_info in parameters.items()
+        ]
+
+        return max(last_val_idxs)
+
+    def make_table_forecast(self, station: dict, time_depth: str):
+
         logging.info(
             "Строю табличку текущих наблюдений для станции %s", station["code"]
         )
@@ -153,25 +253,47 @@ class Plotter:
         out_filename = f"{station['code']}_{self._config['recent-table-suffix']}.png"
         out_filename = os.path.join(self._config["images-folder"], out_filename)
 
-        timestamp = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
+        recent_idx = self._get_recent_idx(station["parameters"], time_depth)
+
+        timestamp = station["db_time_past"][time_depth][recent_idx].strftime(
+            "%d.%m.%Y %H:%M"
+        )
 
         data = []  # Data to plot as a table
         column_headers = ["Наблюдения"]
         for name, parameter in station["parameters"].items():
             row_val = [parameter["full_name"]]
+
             value_obs = (
-                f"{float(parameter['data']['recent']):1.1f}"
-                if parameter["data"]["recent"] is not None
+                f"{float(parameter['data'][time_depth][recent_idx]):1.1f}"
+                if (recent_idx >= 0)
+                and (parameter["data"][time_depth][recent_idx] is not None)
+                and not (
+                    isinstance(parameter["data"][time_depth][recent_idx], float)
+                    and math.isnan(parameter["data"][time_depth][recent_idx])
+                )
                 else "-"
             )
             row_val.append(value_obs)
 
-            # if "om_data_local" in parameter:
             if self.local_forecast:
                 value_fc_local = (
-                    f"{float(parameter['om_data_local']['past']['recent']):1.1f}"
-                    if "om_data_local" in parameter
-                    and parameter["om_data_local"]["past"]["recent"] is not None
+                    f"{float(parameter['om_data_local']['past'][time_depth][recent_idx]):1.1f}"
+                    if (recent_idx >= 0)
+                    and ("om_data_local" in parameter)
+                    and (
+                        parameter["om_data_local"]["past"][time_depth][recent_idx]
+                        is not None
+                    )
+                    and not (
+                        isinstance(
+                            parameter["om_data_local"]["past"][time_depth][recent_idx],
+                            float,
+                        )
+                        and math.isnan(
+                            parameter["om_data_local"]["past"][time_depth][recent_idx]
+                        )
+                    )
                     else "-"
                 )
                 row_val.append(value_fc_local)
@@ -179,19 +301,34 @@ class Plotter:
 
             if glob_forecast:
                 value_fc_glob = (
-                    f"{float(station['om_parameters'][parameter['om_parameter']]['past']['recent']):1.1f}"
-                    if "om_parameter" in parameter
-                    and parameter["om_parameter"] in station["om_parameters"]
-                    and station["om_parameters"][parameter["om_parameter"]]["past"][
-                        "recent"
-                    ]
-                    is not None
+                    f"{float(station['om_parameters'][parameter['om_parameter']]['past'][time_depth][recent_idx]):1.1f}"
+                    if (recent_idx >= 0)
+                    and ("om_parameter" in parameter)
+                    and (parameter["om_parameter"] in station["om_parameters"])
+                    and (
+                        station["om_parameters"][parameter["om_parameter"]]["past"][
+                            time_depth
+                        ][recent_idx]
+                        is not None
+                    )
+                    and not (
+                        isinstance(
+                            station["om_parameters"][parameter["om_parameter"]]["past"][
+                                time_depth
+                            ][recent_idx],
+                            float,
+                        )
+                        and math.isnan(
+                            station["om_parameters"][parameter["om_parameter"]]["past"][
+                                time_depth
+                            ][recent_idx]
+                        )
+                    )
                     else "-"
                 )
                 row_val.append(value_fc_glob)
                 column_headers.append("Глоб. прогноз")
 
-            # data.append([parameter["full_name"], value_obs])
             data.append(row_val)
 
         # Get row headers from the data array
@@ -425,7 +562,7 @@ class Plotter:
             # Отрисовка наблюдений
 
             y_obs = parameter["data"][time_depth]
-            ax.plot(x_obs, y_obs, color="blue", label="Наблюдения")
+            ax.plot(x_obs, y_obs, **self.obs_plot_kwargs)
 
             # Добавление локального (скорректированного) прогноза
             if self.local_forecast:
@@ -436,8 +573,7 @@ class Plotter:
                         ax.plot(
                             x_forecast_past,
                             y_local_past,
-                            color="green",
-                            label="Локальный прогноз",
+                            **self.loc_past_plot_kwargs,
                         )
 
                     # Отрисовка прогноза вперед
@@ -445,7 +581,11 @@ class Plotter:
                         y_local_future = parameter["om_data_local"]["future"][
                             time_forecast
                         ]
-                        ax.plot(x_forecast_future, y_local_future, "--", color="green")
+                        ax.plot(
+                            x_forecast_future,
+                            y_local_future,
+                            **self.loc_future_plot_kwargs,
+                        )
 
             # Добавление глобального (сырого) прогноза
             if glob_forecast:
@@ -461,8 +601,7 @@ class Plotter:
                         ax.plot(
                             x_forecast_past,
                             y_glob_past,
-                            color="darkred",
-                            label="Глобальный прогноз",
+                            **self.glob_past_plot_kwargs,
                         )
 
                     # Отрисовка прогноза вперед
@@ -470,7 +609,11 @@ class Plotter:
                         y_glob_future = station["om_parameters"][
                             parameter["om_parameter"]
                         ]["future"][time_forecast]
-                        ax.plot(x_forecast_future, y_glob_future, "--", color="darkred")
+                        ax.plot(
+                            x_forecast_future,
+                            y_glob_future,
+                            **self.glob_future_plot_kwargs,
+                        )
 
             ax.set_ylabel(parameter["full_name"], size=13)
             ax.tick_params("both", labelsize=12)
