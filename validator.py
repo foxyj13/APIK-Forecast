@@ -1,7 +1,6 @@
 import logging
 
-# from statistics import mean, median
-
+import math
 import numpy as np
 from scipy.stats import variation
 from sklearn.metrics import (
@@ -69,10 +68,25 @@ class Validator:
             return 1 - top / bot
 
         if time_obs == time_mod:
-            if (sum(np.isnan(data_obs)) / len(data_obs) < 0.1) and (
-                sum(np.isnan(data_mod)) / len(data_mod) < 0.1
+            obs_nan = [
+                (
+                    True
+                    if (x is None) or (isinstance(x, float) and math.isnan(x))
+                    else False
+                )
+                for x in data_obs
+            ]
+            mod_nan = [
+                (
+                    True
+                    if (x is None) or (isinstance(x, float) and math.isnan(x))
+                    else False
+                )
+                for x in data_mod
+            ]
+            if (sum(obs_nan) / len(data_obs) < 0.1) and (
+                sum(mod_nan) / len(data_mod) < 0.1
             ):
-
                 nse = get_nse(data_obs, data_mod)
 
                 pearsonr = get_pearsonr(data_obs, data_mod)
@@ -85,7 +99,7 @@ class Validator:
                     - ((pearsonr - 1) ** 2 + (betta - 1) ** 2 + (alpha - 1) ** 2) ** 0.5
                 )
 
-                idx_notnan = ~np.isnan(data_obs) * ~np.isnan(data_mod)
+                idx_notnan = ~np.array(obs_nan) * ~np.array(mod_nan)
                 data_obs_np = np.array(data_obs)[idx_notnan]
                 data_mod_np = np.array(data_mod)[idx_notnan]
                 result = {
