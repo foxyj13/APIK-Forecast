@@ -58,13 +58,11 @@ class OMReader:
             dt_range = [
                 datetime_ranges[time_depth][0].replace(
                     minute=0, second=0, microsecond=0
-                )
-                + datetime.timedelta(hours=1),
+                ),                
                 datetime_ranges[time_depth][1].replace(
                     minute=0, second=0, microsecond=0
                 ),
-            ]
-            # dt_range = datetime_ranges
+            ]           
 
             hours_diff = ((dt_range[1] - dt_range[0]).days + 1) * 24
             timeline_ref = [
