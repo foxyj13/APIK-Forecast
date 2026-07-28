@@ -981,7 +981,7 @@ class Adjustmenter:
                             param_grid = self.ml_models[model_name]["param_grid"]
 
                             model = GridSearchCV(model_cls(), param_grid, cv=5)
-                            model.fit(np.array(x_train), y_train)
+                            model.fit(np.array(x_train), np.array(y_train))
 
                             # TODO: later out model.best_params_ to log and verbose-file
                             result_predict[model_idx] = {}
@@ -995,6 +995,14 @@ class Adjustmenter:
                             )
                             result_predict[model_idx]["mae"] = mean_absolute_error(
                                 y_train, y_test
+                            )
+
+                            logging.info(
+                                "[%s] R2 = %f; RMSE = %f; MAE = %f",
+                                parameter_key,
+                                result_predict[model_idx]["r2"],
+                                result_predict[model_idx]["rmse"],
+                                result_predict[model_idx]["mae"],
                             )
 
                             result_predict[model_idx]["y_past_predict"] = list(
@@ -1059,6 +1067,14 @@ class Adjustmenter:
                                 x_train, x_test
                             )
 
+                            logging.info(
+                                "[%s] R2 = %f; RMSE = %f; MAE = %f",
+                                parameter_key,
+                                result_predict[model_idx]["r2"],
+                                result_predict[model_idx]["rmse"],
+                                result_predict[model_idx]["mae"],
+                            )
+
                             result_predict[model_idx]["y_past_predict"] = list(x_test)
                             result_predict[model_idx]["y_future_predict"] = list(
                                 model.forecast(
@@ -1096,7 +1112,7 @@ class Adjustmenter:
                                 "predictors_future"
                             ]
 
-                            model.fit(np.array(x_train), y_train)
+                            model.fit(np.array(x_train), np.array(y_train))
 
                             # TODO: later out model.params_ to log and verbose-file
 
@@ -1109,6 +1125,14 @@ class Adjustmenter:
                             )
                             result_predict[model_idx]["mae"] = mean_absolute_error(
                                 y_train, y_test
+                            )
+
+                            logging.info(
+                                "[%s] R2 = %f; RMSE = %f; MAE = %f",
+                                parameter_key,
+                                result_predict[model_idx]["r2"],
+                                result_predict[model_idx]["rmse"],
+                                result_predict[model_idx]["mae"],
                             )
 
                             result_predict[model_idx]["y_past_predict"] = list(
