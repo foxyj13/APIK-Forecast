@@ -193,8 +193,6 @@ def main():
 
     qc_gen = True if args.qc_gen == "yes" else False
 
-    now = datetime.date.today()
-
     # ------------ Чтение конфигурационного файла .ini (args.config) ------------
     config = ConfigParser()
     config.read(
@@ -228,13 +226,13 @@ def main():
     logging.info("Проверка сочетания значений входных ключей программы")
 
     if int(time_depth[:-1]) < int(time_forecast[:-1]):
-        time_forecast = time_depth
-        logging.warning(
-            "Значение time_depth (%s) должно быть больше или равно time_forecast (%s). Значение time_forecast изменено на %s",
+        logging.error(
+            "Значение time_depth (%s) меньше time_forecast (%s). Необходимо скорректировать time_depth и/или time_forecast, чтобы выполнялось time_depth >= time_forecast",
             time_depth,
             time_forecast,
-            time_depth,
         )
+        logging.info("Остановка программы")
+        sys.exit(1)
 
     if ((mode == "forec_adj") or (mode == "forec_stat")) and (time_forecast == "0d"):
         logging.error(
@@ -250,12 +248,18 @@ def main():
             )
             add_globforecast_plot = False
 
-    if qc_gen and (now_date == now):
-        logging.error(
-            "Ошибка сочетания значений входных ключей программы: при --qc-gen=yes значение для --now_date должно быть МЕНЬШЕ текущей даты"
-        )
-        logging.info("Остановка программы")
-        sys.exit(1)
+    now = datetime.date.today()
+    if qc_gen:
+        if now_date >= now - datetime.timedelta(days=int(time_forecast[:-1])):
+            logging.error(
+                "Ошибка сочетания значений входных ключей программы: при --qc-gen=yes значение для --now_date должно быть МЕНЬШЕ текущей даты минус длительность прогноза (< now - time_forecast)"
+            )
+            logging.info("Остановка программы")
+            sys.exit(1)
+        om_url = om_config["url_historical"]
+    else:
+        now_date = now
+        om_url = om_config["url_forecast"]
 
     # ------------ Чтение перечня станций и перечня параметров для каждой станции ------------
     stations = read_stations(main_config["stations-file"])
@@ -303,6 +307,7 @@ def main():
         user=db_config["user"],
         password=db_config["password"],
         database=db_config["database"],
+        now_date=now_date,
     )
 
     if db_reader.connect():
@@ -334,7 +339,12 @@ def main():
 
         if ((mode == "forec_adj") or (mode == "forec_stat")) or add_globforecast_plot:
             # ------------ Чтение глобальных прогнозов ------------
-            om_reader = OMReader(url=om_config["url"], model=om_config["model"])
+            # Здесь нужно смотреть какие прогнорзы нам нужны: история для QC или оператив + передять now_date
+            om_reader = OMReader(
+                url=om_url,
+                model=om_config["model"],
+                now_date=now_date,
+            )
 
             if om_reader.connect():
                 logging.info("Считываем глобальные прогнозы")
@@ -348,7 +358,6 @@ def main():
                             station=station,
                             time_depth=time_depth,
                             time_forecast=time_forecast,
-                            now_date=now_date,
                         )
 
                     if (mode == "forec_stat") or ((not status) and (not qc_gen)):

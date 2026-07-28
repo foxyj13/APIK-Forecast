@@ -13,9 +13,10 @@ from scipy import interpolate
 
 
 class OMReader:
-    def __init__(self, url, model):
+    def __init__(self, url, model, now_date):
         self.url = url
         self.model = model
+        self.now_date = now_date
 
         self.openmeteo = None
 
@@ -40,7 +41,6 @@ class OMReader:
         station: dict,
         time_depth: str = "7d",
         time_forecast: str = "0d",
-        now_date=None,
     ) -> tuple[bool, dict]:
 
         def timeline_to_hourly(
@@ -58,11 +58,11 @@ class OMReader:
             dt_range = [
                 datetime_ranges[time_depth][0].replace(
                     minute=0, second=0, microsecond=0
-                ),                
+                ),
                 datetime_ranges[time_depth][1].replace(
                     minute=0, second=0, microsecond=0
                 ),
-            ]           
+            ]
 
             hours_diff = ((dt_range[1] - dt_range[0]).days + 1) * 24
             timeline_ref = [
@@ -100,6 +100,8 @@ class OMReader:
             station["full_name"],
         )
 
+        now_date = self.now_date
+
         # Инициализация ветки в station для хранения OM-метеопараметров
         station["om_parameters"] = {}
 
@@ -136,8 +138,12 @@ class OMReader:
         # 1) отдельно для past: считать -> разложить в словарь station
         request_params_past = deepcopy(request_params)
         request_params_past["hourly"] = om_parameters_list
-        request_params_past["past_days"] = int(time_depth[:-1])
-        request_params_past["forecast_days"] = 2
+        # request_params_past["past_days"] = int(time_depth[:-1])
+        # request_params_past["forecast_days"] = 2
+        request_params_past["start_date"] = str(
+            now_date - datetime.timedelta(days=int(time_depth[:-1]))
+        )
+        request_params_past["end_date"] = str(now_date)
 
         try:
             responses = self.openmeteo.weather_api(self.url, params=request_params_past)  # type: ignore
@@ -225,8 +231,12 @@ class OMReader:
         if int(time_forecast[:-1]) > 0:
             request_params_future = deepcopy(request_params)
             request_params_future["hourly"] = om_parameters_list
-            request_params_future["past_days"] = 0
-            request_params_future["forecast_days"] = int(time_forecast[:-1]) + 2
+            # request_params_future["past_days"] = 0
+            # request_params_future["forecast_days"] = int(time_forecast[:-1]) + 2
+            request_params_future["start_date"] = now_date + datetime.timedelta(hours=1)
+            request_params_future["end_date"] = now_date + datetime.timedelta(
+                days=int(time_forecast[:-1])
+            )
 
             try:
                 responses = self.openmeteo.weather_api(  # type: ignore

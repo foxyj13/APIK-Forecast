@@ -3,22 +3,37 @@ import logging
 import time
 
 import numpy as np
+
+# import tzlocal
 from scipy import interpolate
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import NoResultFound
+from timezonefinder import TimezoneFinder
+from zoneinfo import ZoneInfo
 
 
 class DBReader:
-    def __init__(self, server, port, user, password, database):
+    def __init__(self, server, port, user, password, database, now_date):
         self.server = server
         self.port = port
         self.user = user
         self.password = password
         self.database = database
 
+        self.now_date = now_date
+
         self.meta = None
         self.session = None
+
+        self.timezone_obj = TimezoneFinder()
+
+        # расчет timestamp по now_date
+        # local_tz = tzlocal.get_localzone()
+        # dt_local = datetime.datetime.combine(
+        #     now_date, datetime.datetime.min.time(), tzinfo=local_tz
+        # )
+        # self.utc_now = dt_local.timestamp()
 
     def connect(self) -> bool:
         logging.info("Подключаюсь к БД")
@@ -45,9 +60,7 @@ class DBReader:
                 result = None
         return result
 
-    def get_station_data(
-        self, station: dict, time_depth: str = "7d", now_date=None
-    ) -> dict:
+    def get_station_data(self, station: dict, time_depth: str = "7d") -> dict:
 
         def timeline_to_hourly(
             time_depth: str,
@@ -114,7 +127,19 @@ class DBReader:
             station["full_name"],
         )
 
-        utc_now = time.time()  # Current time in UTC
+        station_lon = station["lon"]
+        station_lat = station["lat"]
+        station_timezone_str = self.timezone_obj.timezone_at(
+            lng=station_lon, lat=station_lat
+        )
+        now_date = datetime.datetime.combine(
+            self.now_date,
+            datetime.datetime.min.time(),
+            tzinfo=ZoneInfo(station_timezone_str),
+        )
+
+        # utc_now = time.time()  # Current time in UTC
+        utc_now = now_date.timestamp()
         utc_now_date = datetime.datetime.fromtimestamp(
             utc_now, tz=datetime.timezone.utc
         )
@@ -179,7 +204,10 @@ class DBReader:
                     )
                     return result
             qry = qry.select_from(data_tbl)
-            qry_f = qry.filter(data_tbl.c.time >= time_limit[time_depth]["limit"])
+            qry_f = qry.filter(
+                data_tbl.c.time >= time_limit[time_depth]["limit"],
+                data_tbl.c.time <= utc_now,
+            )
             try:
                 rows = qry_f.all()
             except NoResultFound:
@@ -339,10 +367,10 @@ class DBReader:
 
             result["db_time_past"]["recent"] = result["db_time_past"]["1d"][-1]
             for parameter in station["parameters"].values():
-                #parameter["data"]["recent"] = parameter["data"]["1d"][-1]
-                parameter["data"]["recent"] = self._fix_value(
-                    rows[-1]._mapping[parameter["name"]], parameter["no_value"]
-                )
+                parameter["data"]["recent"] = parameter["data"]["1d"][-1]
+                # parameter["data"]["recent"] = self._fix_value(
+                #     rows[-1]._mapping[parameter["name"]], parameter["no_value"]
+                # )
         else:
             logging.error(
                 "ОШИБКА! Станции с кодом %s в БД не обнаружено!", station["code"]
@@ -351,7 +379,7 @@ class DBReader:
         return result
 
     def get_station_predictors(
-        self, station: dict, time_depth: str, time_forecast: str, now_date=None
+        self, station: dict, time_depth: str, time_forecast: str
     ) -> tuple[bool, dict]:
 
         def timeline_to_hourly(
@@ -412,8 +440,20 @@ class DBReader:
             station["full_name"],
         )
 
+        station_lon = station["lon"]
+        station_lat = station["lat"]
+        station_timezone_str = self.timezone_obj.timezone_at(
+            lng=station_lon, lat=station_lat
+        )
+        now_date = datetime.datetime.combine(
+            self.now_date,
+            datetime.datetime.min.time(),
+            tzinfo=ZoneInfo(station_timezone_str),
+        )
+
         # Определение временных пределов для prepast и past
-        utc_now = time.time()  # Current time in UTC
+        # utc_now = time.time()  # Current time in UTC
+        utc_now = now_date.timestamp()
         utc_now_date = datetime.datetime.fromtimestamp(
             utc_now, tz=datetime.timezone.utc
         )
@@ -480,7 +520,9 @@ class DBReader:
                 return False, station
 
             # Выбрать данные для периода past: [now - time_depth; now)
-            qry_past = qry.filter(data_tbl.c.time >= utc_td_before)
+            qry_past = qry.filter(
+                data_tbl.c.time >= utc_td_before, data_tbl.c.time <= utc_now
+            )
             try:
                 rows_past = qry_past.all()
             except NoResultFound:
@@ -498,22 +540,7 @@ class DBReader:
             station["om_time_prepast"] = {time_depth: []}
             station["om_time_past"] = {
                 time_depth: [],
-                # "recent": datetime.datetime.fromtimestamp(
-                #     rows_past[-1].time, tz=datetime.timezone.utc
-                # )
-                # + station_timeshift,
             }
-
-            # station["om_time_future"] = {}
-            # station["om_time_future"][time_forecast] = [
-            #     station["om_time_past"]["recent"] + datetime.timedelta(hours=hh + 1)
-            #     for hh in range(int(time_forecast[:-1]) * 24)
-            # ]
-            # station["om_time_range_future"] = {}
-            # station["om_time_range_future"] = [
-            #     station["om_time_future"][time_forecast][0],
-            #     station["om_time_future"][time_forecast][-1],
-            # ]
 
             station["om_time_range_prepast"] = {}
             station["om_time_range_past"] = {}
