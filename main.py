@@ -186,10 +186,12 @@ def main():
     mode = args.mode
     time_depth = args.time_depth
     time_forecast = args.time_forecast
-    add_globforecast_plot = args.add_globforecast_plot
+    add_globforecast_plot = True if args.add_globforecast_plot == "yes" else False
     now_date = datetime.datetime.strptime(
         args.now_date, "%Y-%m-%d"
     ).date()  # args.now_date
+
+    qc_gen = True if args.qc_gen == "yes" else False
 
     now = datetime.date.today()
 
@@ -217,7 +219,7 @@ def main():
     if not os.path.exists(main_config["ml-verbose-folder"]):
         os.mkdir(main_config["ml-verbose-folder"])
 
-    if args.qc_gen == "yes":
+    if qc_gen:
         main_config["export_enable"] = "True"
 
     init_logging(config)
@@ -242,13 +244,13 @@ def main():
         sys.exit(1)
 
     if mode == "forec_stat":
-        if add_globforecast_plot == "yes":
+        if add_globforecast_plot:
             logging.info(
                 "Глобальный прогноз отрисован не будет, т.к. задан расчет стат. прогноза (mode=forec_stat), а не уточнение глобального прогноза (mode=forec_adj)"
             )
-            add_globforecast_plot = "no"
+            add_globforecast_plot = False
 
-    if (args.qc_gen == "yes") and (now_date == now):
+    if qc_gen and (now_date == now):
         logging.error(
             "Ошибка сочетания значений входных ключей программы: при --qc-gen=yes значение для --now_date должно быть МЕНЬШЕ текущей даты"
         )
@@ -330,150 +332,154 @@ def main():
             )
             sys.exit(1)
 
-    if ((mode == "forec_adj") or (mode == "forec_stat")) or (
-        add_globforecast_plot == "yes"
-    ):
-        # ------------ Чтение глобальных прогнозов ------------
-        om_reader = OMReader(url=om_config["url"], model=om_config["model"])
-
-        if om_reader.connect():
-            logging.info("Считываем глобальные прогнозы")
-
+        if ((mode == "forec_adj") or (mode == "forec_stat")) or add_globforecast_plot:
             # ------------ Чтение глобальных прогнозов ------------
-            for station in stations:
-                status = False
+            om_reader = OMReader(url=om_config["url"], model=om_config["model"])
 
-                if mode == "forec_adj":
-                    status, station = om_reader.get_model_data(
-                        station=station,
-                        time_depth=time_depth,
-                        time_forecast=time_forecast,
-                        now_date=now_date,
-                    )
+            if om_reader.connect():
+                logging.info("Считываем глобальные прогнозы")
 
-                if not status:
-                    logging.error("Глобальный прогноз не используется")
-                    status, station = db_reader.get_station_predictors(
-                        station=station,
-                        time_depth=time_depth,
-                        time_forecast=time_forecast,
-                    )
-
-                    if not status:
-                        logging.error(
-                            "Предикторы для статистического прогноза не получены. Остановка программы"
-                        )
-                        sys.exit(1)
-
-            # ------------ Если прогноз нужно корректировать или рассчитывать стат прогноз ------------
-            if (mode == "forec_adj") or (mode == "forec_stat"):
-                logging.info("Формируем локальные прогнозы")
-
+                # ------------ Чтение глобальных прогнозов ------------
                 for station in stations:
-                    # ------------ Корректировка глобальных прогнозов или расчет стат прогноза (ML-блок) ------------
-                    #       (локальные прогнозы)
-                    station = ml_adjust.get_local_forecast(station)
+                    status = False
 
-                # ------------ Вывод результата: отрисовка, экспорт, html ------------
-                if add_globforecast_plot == "yes":
-                    # Отрисовка наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз
+                    if mode == "forec_adj":
+                        status, station = om_reader.get_model_data(
+                            station=station,
+                            time_depth=time_depth,
+                            time_forecast=time_forecast,
+                            now_date=now_date,
+                        )
+
+                    if (mode == "forec_stat") or ((not status) and (not qc_gen)):
+                        logging.error("Глобальный прогноз не используется")
+                        status, station = db_reader.get_station_predictors(
+                            station=station,
+                            time_depth=time_depth,
+                            time_forecast=time_forecast,
+                        )
+
+                        if not status:
+                            logging.error(
+                                "Не получены предикторы для статистического прогноза для станции [%s] %s",
+                                station["code"],
+                                station["full_name"],
+                            )
+
+                    if (not status) and qc_gen:
+                        logging.error(
+                            "Не получены предикторы для прогноза для станции [%s] %s",
+                            station["code"],
+                            station["full_name"],
+                        )
+
+                # ------------ Если прогноз нужно корректировать или рассчитывать стат прогноз ------------
+                if (mode == "forec_adj") or (mode == "forec_stat"):
+                    logging.info("Формируем локальные прогнозы")
+
+                    for station in stations:
+                        # ------------ Корректировка глобальных прогнозов или расчет стат прогноза (ML-блок) ------------
+                        #       (локальные прогнозы)
+                        station = ml_adjust.get_local_forecast(station)
+
+                    # ------------ Вывод результата: отрисовка, экспорт, html ------------
+                    if add_globforecast_plot:
+                        # Отрисовка наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз
+                        logging.info(
+                            "Строим статичные графики: наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз"
+                        )
+
+                        plotter = Plotter(
+                            dict(main_config), glob_forecast=True, local_forecast=True
+                        )
+                    else:
+                        # Отрисовка наблюдения + локальный (уточненный) прогноз
+                        logging.info(
+                            "Строим статичные графики: наблюдения + локальный прогноз"
+                        )
+
+                        plotter = Plotter(
+                            dict(main_config), glob_forecast=False, local_forecast=True
+                        )
+                else:
+                    # Отрисовка наблюдения + глобальный (сырой) прогноз
                     logging.info(
-                        "Строим статичные графики: наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз"
+                        "Строим статичные графики: наблюдения + глобальный (сырой) прогноз"
                     )
 
                     plotter = Plotter(
-                        dict(main_config), glob_forecast=True, local_forecast=True
+                        dict(main_config), glob_forecast=True, local_forecast=False
+                    )
+
+                for station in stations:
+                    plotter.make_table_forecast(station=station, time_depth=time_depth)
+                    plotter.make_plots_forecast(
+                        station=station,
+                        time_depth=time_depth,
+                        time_forecast=time_forecast,
+                    )
+
+                    # # Экспорт в CSV (если включен в congig.ini)
+                    # #   Проверка на включенность опции внутри самой функции export_to_csv
+                    # plotter.export_to_csv_forecast(
+                    #     station=station,
+                    #     time_depth=time_depth,
+                    #     time_forecast=time_forecast,
+                    # )
+
+                # ------------ Расчет метрик ------------
+                # validator = Validator(
+                #     time_depth=time_depth, time_forecast=time_forecast
+                # )
+                # logging.info("Рассчитываем метрики по имеющимся данным")
+                # for station in stations:
+                #     station = validator.get_metrics(station)
+
+            else:
+                logging.error("Не удалось получить глобальные прогнозы!")
+
+        else:
+            # ------------ Отрисовка только наблюдений, экспорт, html ------------
+            all_stations = stations
+
+            plot_mode = main_config.get("mode", "")
+            if plot_mode == "interactive":
+                # Построение интерактивных графиков
+                # Выбор перерменных для отрисовки (если указаны в config.ini, то: берем их; иначе: все)
+                if main_config.get("variables", ""):
+                    variables = list(
+                        map(str.strip, main_config["variables"].split(","))
                     )
                 else:
-                    # Отрисовка наблюдения + локальный (уточненный) прогноз
-                    logging.info(
-                        "Строим статичные графики: наблюдения + локальный прогноз"
+                    all_variables_names = set()
+                    for station in stations:
+                        all_variables_names.update(set(station["parameters"].keys()))
+                    variables = list(all_variables_names)
+
+                if all_stations:
+                    # Отрисовка данных
+                    logging.info("Строим интерактивные графики")
+                    plotter_js = PlotterJS(
+                        config=dict(main_config),
+                        stations=all_stations,
+                        time_depth=time_depth,
                     )
+                    plotter_js.make_plots(variables=variables)
 
-                    plotter = Plotter(
-                        dict(main_config), glob_forecast=False, local_forecast=True
-                    )
+            elif plot_mode == "static":
+                # Построение статичных графиков
+                logging.info("Строим статичные графики")
+                plotter = Plotter(dict(main_config))
+                if all_stations:
+                    for station in all_stations:
+                        plotter.make_table(station=station)
+                        plotter.make_plots(station=station, time_depth=time_depth)
+
+                        # Экспорт в CSV (если включен в congig.ini)
+                        #   Проверка на включенность опции внутри самой функции export_to_csv
+                        plotter.export_to_csv(station=station, time_depth=time_depth)
             else:
-                # Отрисовка наблюдения + глобальный (сырой) прогноз
-                logging.info(
-                    "Строим статичные графики: наблюдения + глобальный (сырой) прогноз"
-                )
-
-                plotter = Plotter(
-                    dict(main_config), glob_forecast=True, local_forecast=False
-                )
-
-            for station in stations:
-                plotter.make_table_forecast(station=station)
-                plotter.make_plots_forecast(
-                    station=station,
-                    time_depth=time_depth,
-                    time_forecast=time_forecast,
-                )
-
-                # # Экспорт в CSV (если включен в congig.ini)
-                # #   Проверка на включенность опции внутри самой функции export_to_csv
-                # plotter.export_to_csv_forecast(
-                #     station=station,
-                #     time_depth=time_depth,
-                #     time_forecast=time_forecast,
-                # )
-
-            # ------------ Расчет метрик ------------
-            validator = Validator(time_depth=time_depth, time_forecast=time_forecast)
-            logging.info("Рассчитываем метрики по имеющимся данным")
-            for station in stations:
-                station = validator.get_metrics(station)
-
-        else:
-            logging.error("Не удалось получить глобальные прогнозы!")
-
-    else:
-        # ------------ Отрисовка только наблюдений, экспорт, html ------------
-        # all_stations = []
-        # for station in stations:
-        #     if station:
-        #         all_stations.append(station)
-        #     else:
-        #         logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
-        all_stations = stations
-
-        plot_mode = main_config.get("mode", "")
-        if plot_mode == "interactive":
-            # Построение интерактивных графиков
-            # Выбор перерменных для отрисовки (если указаны в config.ini, то: берем их; иначе: все)
-            if main_config.get("variables", ""):
-                variables = list(map(str.strip, main_config["variables"].split(",")))
-            else:
-                all_variables_names = set()
-                for station in stations:
-                    all_variables_names.update(set(station["parameters"].keys()))
-                variables = list(all_variables_names)
-
-            if all_stations:
-                # Отрисовка данных
-                logging.info("Строим интерактивные графики")
-                plotter_js = PlotterJS(
-                    config=dict(main_config),
-                    stations=all_stations,
-                    time_depth=time_depth,
-                )
-                plotter_js.make_plots(variables=variables)
-
-        elif plot_mode == "static":
-            # Построение статичных графиков
-            logging.info("Строим статичные графики")
-            plotter = Plotter(dict(main_config))
-            if all_stations:
-                for station in all_stations:
-                    plotter.make_table(station=station)
-                    plotter.make_plots(station=station, time_depth=time_depth)
-
-                    # Экспорт в CSV (если включен в congig.ini)
-                    #   Проверка на включенность опции внутри самой функции export_to_csv
-                    plotter.export_to_csv(station=station, time_depth=time_depth)
-        else:
-            logging.error('Неизвестный режим отрисовки: "%s".', plot_mode)
+                logging.error('Неизвестный режим отрисовки: "%s".', plot_mode)
 
     logging.info("Заканчиваем работу")
 
