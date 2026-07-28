@@ -23,7 +23,12 @@ class ScalingModel:
         self.scale_ = 1.0
 
     def fit(self, x_arr, y_arr):
-        self.scale_ = (np.array(y_arr) / np.array(x_arr)).mean()
+        x = np.array(x_arr)
+        y = np.array(y_arr)
+
+        x[x == 0] = np.nan
+
+        self.scale_ = np.nanmean(y / x)
 
     def predict(self, x_arr):
         return list(np.array(x_arr) * self.scale_)
