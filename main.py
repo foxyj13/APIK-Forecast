@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import re
 
 # from datetime import datetime
 import logging
@@ -55,16 +56,16 @@ def read_args():
         default="0d",
     )
     parser.add_argument(
-        "--qc-gen",
-        help="Turn off/on QC-report generation mode (no, yes)",
+        "--forecast-type",
+        help="Type of forecast: real-time or using historical data",
         type=str,
-        choices=["no", "yes"],
-        default="no",
+        choices=["realtime", "historical"],
+        default="realtime",
     )
     now = datetime.date.today()
     parser.add_argument(
         "--now-date",
-        help="Now date for QC-report generation (yyyy-mm-dd)",
+        help="Now date for forecast on historical data (yyyy-mm-dd)",
         type=str,
         default=now,
     )
@@ -191,7 +192,7 @@ def main():
         args.now_date, "%Y-%m-%d"
     ).date()  # args.now_date
 
-    qc_gen = True if args.qc_gen == "yes" else False
+    hist_forecast = True if args.forecast_type == "historical" else False
 
     # ------------ Чтение конфигурационного файла .ini (args.config) ------------
     config = ConfigParser()
@@ -217,7 +218,7 @@ def main():
     if not os.path.exists(main_config["ml-verbose-folder"]):
         os.mkdir(main_config["ml-verbose-folder"])
 
-    if qc_gen:
+    if hist_forecast:  # ???
         main_config["export_enable"] = "True"
 
     init_logging(config)
@@ -249,17 +250,25 @@ def main():
             add_globforecast_plot = False
 
     now = datetime.date.today()
-    if qc_gen:
+    if hist_forecast:
         if now_date >= now - datetime.timedelta(days=int(time_forecast[:-1])):
             logging.error(
-                "Ошибка сочетания значений входных ключей программы: при --qc-gen=yes значение для --now_date должно быть МЕНЬШЕ текущей даты минус длительность прогноза (< now - time_forecast)"
+                "Ошибка сочетания значений входных ключей программы: при --forecast-type=historical значение для --now_date должно быть МЕНЬШЕ текущей даты минус длительность прогноза (< now - time_forecast)"
             )
             logging.info("Остановка программы")
             sys.exit(1)
-        om_url = om_config["url_historical"]
+        om_url = om_config["url-historical-forecast"]
     else:
         now_date = now
-        om_url = om_config["url_forecast"]
+        om_url = om_config["url-realtime-forecast"]
+
+    if mode == "forec_adj":
+        om_api_version = int(re.findall(r"/v\d+/", om_url)[0].strip("/")[1:])
+        if om_api_version != 1:
+            logging.warning(
+                "Версия Open-Meteo API изменилась с v1 на v%s (см. [OM] url). Программа может работать некорректно. Проверьте правильность версии в url и/или структуру запроса в классе OMReader",
+                om_api_version,
+            )
 
     # ------------ Чтение перечня станций и перечня параметров для каждой станции ------------
     stations = read_stations(main_config["stations-file"])
@@ -339,7 +348,6 @@ def main():
 
         if ((mode == "forec_adj") or (mode == "forec_stat")) or add_globforecast_plot:
             # ------------ Чтение глобальных прогнозов ------------
-            # Здесь нужно смотреть какие прогнорзы нам нужны: история для QC или оператив + передять now_date
             om_reader = OMReader(
                 url=om_url,
                 model=om_config["model"],
@@ -360,7 +368,7 @@ def main():
                             time_forecast=time_forecast,
                         )
 
-                    if (mode == "forec_stat") or ((not status) and (not qc_gen)):
+                    if (mode == "forec_stat") or ((not status) and (not hist_forecast)):
                         logging.error("Глобальный прогноз не используется")
                         status, station = db_reader.get_station_predictors(
                             station=station,
@@ -375,7 +383,7 @@ def main():
                                 station["full_name"],
                             )
 
-                    if (not status) and qc_gen:
+                    if (not status) and hist_forecast:
                         logging.error(
                             "Не получены предикторы для прогноза для станции [%s] %s",
                             station["code"],
