@@ -1,11 +1,12 @@
 import datetime
 import logging
 import math
+import os
+import csv
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import os
-import csv
+import numpy as np
 
 
 class Plotter:
@@ -518,7 +519,7 @@ class Plotter:
                 )
             else:
                 logging.info(
-                    "Добавляю график глобального (сырого) прогнозаза прошлые %s дней и на будущие %s дней",
+                    "Добавляю график глобального (сырого) прогноза за прошлые %s дней и на будущие %s дней",
                     time_depth[:-1],
                     time_forecast[:-1],
                 )
@@ -560,9 +561,9 @@ class Plotter:
             ax = plt.gca()
 
             # Отрисовка наблюдений
-
             y_obs = parameter["data"][time_depth]
-            ax.plot(x_obs, y_obs, **self.obs_plot_kwargs)
+            if y_obs.count(None) != len(y_obs) and ~np.isnan(y_obs).all():
+                ax.plot(x_obs, y_obs, **self.obs_plot_kwargs)
 
             # Добавление локального (скорректированного) прогноза
             if self.local_forecast:
@@ -570,22 +571,30 @@ class Plotter:
                     # Отрисовка исторического интервала прогноза
                     if "past" in parameter["om_data_local"]:
                         y_local_past = parameter["om_data_local"]["past"][time_depth]
-                        ax.plot(
-                            x_forecast_past,
-                            y_local_past,
-                            **self.loc_past_plot_kwargs,
-                        )
+                        if (
+                            y_local_past.count(None) != len(y_local_past)
+                            and ~np.isnan(y_local_past).all()
+                        ):
+                            ax.plot(
+                                x_forecast_past,
+                                y_local_past,
+                                **self.loc_past_plot_kwargs,
+                            )
 
                     # Отрисовка прогноза вперед
                     if "future" in parameter["om_data_local"]:
                         y_local_future = parameter["om_data_local"]["future"][
                             time_forecast
                         ]
-                        ax.plot(
-                            x_forecast_future,
-                            y_local_future,
-                            **self.loc_future_plot_kwargs,
-                        )
+                        if (
+                            y_local_future.count(None) != len(y_local_future)
+                            and ~np.isnan(y_local_future).all()
+                        ):
+                            ax.plot(
+                                x_forecast_future,
+                                y_local_future,
+                                **self.loc_future_plot_kwargs,
+                            )
 
             # Добавление глобального (сырого) прогноза
             if glob_forecast:
@@ -598,22 +607,30 @@ class Plotter:
                         y_glob_past = station["om_parameters"][
                             parameter["om_parameter"]
                         ]["past"][time_depth]
-                        ax.plot(
-                            x_forecast_past,
-                            y_glob_past,
-                            **self.glob_past_plot_kwargs,
-                        )
+                        if (
+                            y_glob_past.count(None) != len(y_glob_past)
+                            and ~np.isnan(y_glob_past).all()
+                        ):
+                            ax.plot(
+                                x_forecast_past,
+                                y_glob_past,
+                                **self.glob_past_plot_kwargs,
+                            )
 
                     # Отрисовка прогноза вперед
                     if "future" in station["om_parameters"][parameter["om_parameter"]]:
                         y_glob_future = station["om_parameters"][
                             parameter["om_parameter"]
                         ]["future"][time_forecast]
-                        ax.plot(
-                            x_forecast_future,
-                            y_glob_future,
-                            **self.glob_future_plot_kwargs,
-                        )
+                        if (
+                            y_glob_future.count(None) != len(y_glob_future)
+                            and ~np.isnan(y_glob_future).all()
+                        ):
+                            ax.plot(
+                                x_forecast_future,
+                                y_glob_future,
+                                **self.glob_future_plot_kwargs,
+                            )
 
             ax.set_ylabel(parameter["full_name"], size=13)
             ax.tick_params("both", labelsize=12)
