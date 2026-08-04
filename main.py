@@ -12,13 +12,13 @@ from copy import deepcopy
 from configparser import ConfigParser
 from logging.handlers import TimedRotatingFileHandler
 
+import json
 import openpyxl
 
 from plotter import Plotter
 from plotter_js import PlotterJS
 from dbreader import DBReader
 from omreader import OMReader
-from validator import Validator
 from adjustmenter import Adjustmenter
 
 
@@ -181,7 +181,74 @@ def read_stations(stations_file: str) -> list:
     return stations
 
 
+def get_station_info(
+    station: dict, time_depth: str, time_forecast: str, ml_adj: Adjustmenter
+) -> dict:
+
+    st_info = {}
+
+    # --------- Сохранение общей информации ---------
+    st_info["full_name"] = station["full_name"]
+    st_info["code"] = station["code"]
+    st_info["lat"] = station["lat"]
+    st_info["lon"] = station["lon"]
+
+    # --------- Сохранение информации о метео-параметрах (имена, ряды данных наблюдений, ряды прогнозов, оценки) ---------
+    st_info["parameters"] = {}
+    for par_name, par_info in station["parameters"].item():
+        st_par_info = {}
+        st_par_info["name"] = par_info["name"]
+        st_par_info["code"] = par_info["code"]
+        st_par_info["full_name"] = par_info["full_name"]
+        st_par_info["short_name"] = par_info["short_name"]
+        st_par_info["no_value"] = par_info["no_value"]
+        st_par_info["min_value"] = par_info["min_value"]
+        st_par_info["max_value"] = par_info["max_value"]
+
+        st_par_info["db_predictors"] = list(par_info["db_predictors"].keys())
+        st_par_info["om_parameter"] = par_info["om_parameter"]
+        st_par_info["om_predictors"] = par_info["om_predictors"]
+
+        st_par_info["data"] = {time_depth: par_info["data"][time_depth]}
+
+        st_info["parameters"]["models"] = ml_adj.get_station_par_models_info(
+            station["code"], par_name
+        )
+
+        st_par_info["data_local"] = par_info["om_data_local"]
+        st_par_info["data_local_no_corr"] = par_info["om_data_local_no_corr"]
+
+        st_info["parameters"][par_name] = st_par_info
+
+    # --------- Сохранение информации о предикторах (имена и ряды данных) ---------
+    st_info["predictors_data"] = (
+        station["om_parameters"] if "om_parameters" in station else {}
+    )
+
+    # --------- Сохранение информации об оси времени ---------
+    st_info["timeline"] = {}
+    st_info["timeline"]["prepast"] = (
+        station["om_time_prepast"] if "om_time_prepast" in station else {}
+    )
+    st_info["timeline"]["past"] = (
+        station["om_time_past"] if "om_time_past" in station else {}
+    )
+    st_info["timeline"]["future"] = (
+        station["om_time_future"] if "om_time_future" in station else {}
+    )
+
+    return st_info
+
+
 def main():
+    # Словарь для хранения информации для последующей выгрузки в JSON-файл
+    data_log_json = {}
+    data_log_json["args"] = {}
+    data_log_json["config_ini"] = {}
+    data_log_json["config_ml_ini"] = {}
+    data_log_json["stations"] = []
+
+    # ============ Чтение и проверка всех настроек =============
     # ------------ Получение аргументов программы ------------
     args = read_args()
     mode = args.mode
@@ -212,14 +279,8 @@ def main():
     if not os.path.exists(main_config["web-folder"]):
         os.mkdir(main_config["web-folder"])
 
-    if not os.path.exists(main_config["csv-folder"]):
-        os.mkdir(main_config["csv-folder"])
-
-    if not os.path.exists(main_config["ml-verbose-folder"]):
-        os.mkdir(main_config["ml-verbose-folder"])
-
-    if hist_forecast:  # ???
-        main_config["export_enable"] = "True"
+    if not os.path.exists(main_config["ml-json-folder"]):
+        os.mkdir(main_config["ml-json-folder"])
 
     init_logging(config)
     logging.info("Начинаем работу!")
@@ -257,6 +318,7 @@ def main():
             )
             logging.info("Остановка программы")
             sys.exit(1)
+
         om_url = om_config["url-historical-forecast"]
     else:
         now_date = now
@@ -269,6 +331,52 @@ def main():
                 "Версия Open-Meteo API изменилась с v1 на v%s (см. [OM] url). Программа может работать некорректно. Проверьте правильность версии в url и/или структуру запроса в классе OMReader",
                 om_api_version,
             )
+
+    plot_mode = main_config.get("plot_mode", "")
+    if plot_mode == "static":
+        logging.info("Результат будет представлен в виде статичных рисунков")
+    elif plot_mode == "interactive":
+        logging.info("Результат будет представлен в виде интерактивных графиков")
+    else:
+        logging.error(
+            "Задан неизвестный тип отрисовки. Проверьте опцию plot_mode в файле config.ini. Возможные значения: static или interactive"
+        )
+        sys.exit(1)
+
+    # ------------ Формирование имени JSON-файла для записи всей информации по работе программы ------------
+    fname = (
+        "apik-forecast_"
+        + args.forecast_type
+        + "_"
+        + str(now_date)
+        + "_td"
+        + time_depth
+        + "_tf"
+        + time_forecast
+        + "_"
+        + main_config["ml-json-file-suffix"]
+        + ".json"
+    )
+    fname_json = os.path.join(main_config["ml-json-folder"], fname)
+
+    ml_verbose = main_config["ml-verbose"] == "true"
+    if ml_verbose:
+        logging.info("Вся информация о расчетах будет выведена в JSON-файл %s", fname)
+
+    # ------------ Сохранение в словарь входных аргументов и конфигурации (после корректировок) ----------
+    data_log_json["args"]["mode"] = mode
+    data_log_json["args"]["add_globforecast_plot"] = add_globforecast_plot
+    data_log_json["args"]["time_depth"] = time_depth
+    data_log_json["args"]["time_forecast"] = time_forecast
+    data_log_json["args"]["forecast_type"] = args.forecast_type
+    data_log_json["args"]["now_date"] = str(now_date)
+    data_log_json["args"]["config_file"] = args.config
+
+    data_log_json["config_ini"]["db"] = dict(db_config.items())
+    data_log_json["config_ini"]["om"] = {}
+    data_log_json["config_ini"]["om"]["url_forecast"] = om_url
+    data_log_json["config_ini"]["om"]["model"] = om_config["model"]
+    data_log_json["config_ini"]["main"] = dict(main_config.items())
 
     # ------------ Чтение перечня станций и перечня параметров для каждой станции ------------
     stations = read_stations(main_config["stations-file"])
@@ -305,10 +413,12 @@ def main():
             now_date=now_date,
             time_depth=time_depth,
             time_forecast=time_forecast,
-            verbose=main_config["ml-verbose"],
-            verbose_dir=main_config["ml-verbose-folder"],
         )
 
+        # ------------ Сохранение в словарь ml-конфигурации (после корректировок) ----------
+        data_log_json["config_ml_ini"] = ml_adjust.get_config()
+
+    # ============ Расчетно-рисующая часть =============
     # ------------ Чтение данных наблюдений ------------
     db_reader = DBReader(
         server=db_config["server"],
@@ -399,7 +509,7 @@ def main():
                         #       (локальные прогнозы)
                         station = ml_adjust.get_local_forecast(station)
 
-                    # ------------ Вывод результата: отрисовка, экспорт, html ------------
+                    # ------------ Вывод результата: отрисовка, html ------------
                     if add_globforecast_plot:
                         # Отрисовка наблюдения + локальный (уточненный) прогноз + глобальный (сырой) прогноз
                         logging.info(
@@ -436,21 +546,16 @@ def main():
                         time_forecast=time_forecast,
                     )
 
-                    # # Экспорт в CSV (если включен в congig.ini)
-                    # #   Проверка на включенность опции внутри самой функции export_to_csv
-                    # plotter.export_to_csv_forecast(
-                    #     station=station,
-                    #     time_depth=time_depth,
-                    #     time_forecast=time_forecast,
-                    # )
+                for station in stations:
+                    station_info = get_station_info(
+                        station, time_depth, time_forecast, ml_adjust
+                    )
+                    data_log_json["stations"].append(station_info)
 
-                # ------------ Расчет метрик ------------
-                # validator = Validator(
-                #     time_depth=time_depth, time_forecast=time_forecast
-                # )
-                # logging.info("Рассчитываем метрики по имеющимся данным")
-                # for station in stations:
-                #     station = validator.get_metrics(station)
+                # Вывод data_log_json в JSON-файл
+                if ml_verbose:
+                    with open(fname_json, "w", encoding="utf-8") as f_json:
+                        json.dump(data_log_json, f_json, ensure_ascii=False, indent=4)
 
             else:
                 logging.error("Не удалось получить глобальные прогнозы!")
@@ -459,7 +564,6 @@ def main():
             # ------------ Отрисовка только наблюдений, экспорт, html ------------
             all_stations = stations
 
-            plot_mode = main_config.get("mode", "")
             if plot_mode == "interactive":
                 # Построение интерактивных графиков
                 # Выбор перерменных для отрисовки (если указаны в config.ini, то: берем их; иначе: все)

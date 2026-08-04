@@ -26,24 +26,10 @@ from sklearn.model_selection import GridSearchCV
 
 
 class Adjustmenter:
-    def __init__(
-        self,
-        config,
-        now_date,
-        time_depth: str,
-        time_forecast: str,
-        verbose: str,
-        verbose_dir: str,
-    ):
+    def __init__(self, config, now_date, time_depth: str, time_forecast: str):
         self.now_date = now_date
         self.time_depth = time_depth
         self.time_forecast = time_forecast
-
-        self.verbose = verbose.lower() == "true"
-        self.verbose_dir = verbose_dir
-        if self.verbose:
-            # добавить создание и открытие файла для вербоза + вписать туда стартовые данные
-            ...
 
         self.ml_models = self._set_available_models()
         self.ml_models_list = list(self.ml_models.keys())
@@ -73,6 +59,9 @@ class Adjustmenter:
             sys.exit(1)
         else:
             self.cfg_sections = list(self.config.keys())
+
+        # Словарь для сохранения информации о моделях и промехуточных расчетах для каждого параметра каждой станции
+        self.station_calc_info = {}
 
     @staticmethod
     def _set_available_models() -> dict:
@@ -520,6 +509,18 @@ class Adjustmenter:
 
         return cfg_dict
 
+    def get_config(self) -> dict:
+        return self.config
+
+    def get_station_par_models_info(self, station_code, par_name) -> dict:
+
+        if (station_code in self.station_calc_info) and (
+            par_name in self.station_calc_info[station_code]
+        ):
+            return self.station_calc_info[station_code][par_name]
+
+        return {}
+
     @staticmethod
     def _check_corr_data_bounds(
         data: list, min_val: float, max_val: float
@@ -884,7 +885,7 @@ class Adjustmenter:
         forecast_type: str,
         parameter_key: str,
         train_predict_sets: dict,
-    ) -> tuple[list, list]:
+    ) -> tuple[list, list, dict]:
 
         def logging_err_status(model_type: str) -> None:
             if train_predict_sets[model_type]["status"] == 0:
@@ -905,6 +906,8 @@ class Adjustmenter:
                 )
 
         model_cfg = self.config[parameter_key]
+
+        mods_info = {}
 
         model_set = model_cfg["model-set"]
         model_params_user = model_cfg["model-params-user"]
@@ -956,6 +959,8 @@ class Adjustmenter:
                 model_name,
             )
 
+            mods_info[model_name] = {}
+
             try:
                 model_cls = self.ml_models[model_name]["cls"]
 
@@ -983,11 +988,10 @@ class Adjustmenter:
                             model = GridSearchCV(model_cls(), param_grid, cv=5)
                             model.fit(np.array(x_train), np.array(y_train))
 
-                            # TODO: later out model.best_params_ to log and verbose-file
                             result_predict[model_idx] = {}
 
                             y_test = model.best_estimator_.predict(np.array(x_train))
-                            # !!! TODO:
+
                             # Диагностический вывод будет всех метрик
                             result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
                             result_predict[model_idx]["rmse"] = root_mean_squared_error(
@@ -1029,6 +1033,28 @@ class Adjustmenter:
                                     idx, np.nan
                                 )
 
+                            # -------- Out model.best_params_, metrics and model-result to json-dict --------
+                            mods_info[model_name]["model_cfg"] = {
+                                "cfg_type": "best_cfg",
+                                "cfg_pars": model.best_params_,
+                            }
+                            mods_info[model_name]["train_metrics"] = {
+                                "r2": result_predict[model_idx]["r2"],
+                                "rmse": result_predict[model_idx]["rmse"],
+                                "mae": result_predict[model_idx]["mae"],
+                            }
+                            mods_info[model_name]["data_local"] = {}
+                            mods_info[model_name]["data_local"]["past"] = {
+                                self.time_depth: result_predict[model_idx][
+                                    "y_past_predict"
+                                ]
+                            }
+                            mods_info[model_name]["data_local"]["future"] = {
+                                self.time_forecast: result_predict[model_idx][
+                                    "y_future_predict"
+                                ]
+                            }
+
                         else:
                             logging_err_status(model_type)
                 else:
@@ -1040,25 +1066,32 @@ class Adjustmenter:
                             x_train = train_predict_sets[model_type]["train"]
 
                             if model_params_user:
-                                model = model_cls(
-                                    x_train,
-                                    **(
-                                        self.ml_models[model_name]["default_params"]
-                                        | model_params_user
-                                    )
-                                ).fit()
+                                model_pars = (
+                                    self.ml_models[model_name]["default_params"]
+                                    | model_params_user
+                                )
+                                model = model_cls(x_train, **model_pars).fit()
+
+                                mods_info[model_name]["model_cfg"] = {
+                                    "cfg_type": "user_cfg",
+                                    "cfg_pars": model_pars,
+                                }
                             else:
                                 model = model_cls(
                                     x_train,
                                     **self.ml_models[model_name]["default_params"]
                                 ).fit()
 
+                                mods_info[model_name]["model_cfg"] = {
+                                    "cfg_type": "default_cfg",
+                                    "cfg_pars": self.ml_models[model_name][
+                                        "default_params"
+                                    ],
+                                }
+
                             x_test = model.fittedvalues
 
-                            # TODO: later out model.params to log and verbose-file
-
-                            # !!! TODO:
-                            # Диагностический вывод будет всех метрик
+                            # Диагностический вывод всех метрик
                             result_predict[model_idx]["r2"] = r2_score(x_train, x_test)
                             result_predict[model_idx]["rmse"] = root_mean_squared_error(
                                 x_train, x_test
@@ -1081,6 +1114,23 @@ class Adjustmenter:
                                     steps=train_predict_sets[model_type]["len_future"]
                                 )
                             )
+
+                            mods_info[model_name]["train_metrics"] = {
+                                "r2": result_predict[model_idx]["r2"],
+                                "rmse": result_predict[model_idx]["rmse"],
+                                "mae": result_predict[model_idx]["mae"],
+                            }
+                            mods_info[model_name]["data_local"] = {}
+                            mods_info[model_name]["data_local"]["past"] = {
+                                self.time_depth: result_predict[model_idx][
+                                    "y_past_predict"
+                                ]
+                            }
+                            mods_info[model_name]["data_local"]["future"] = {
+                                self.time_forecast: result_predict[model_idx][
+                                    "y_future_predict"
+                                ]
+                            }
                         else:
                             logging_err_status(model_type)
 
@@ -1088,13 +1138,28 @@ class Adjustmenter:
                         if model_name in self.base_models:
                             model_type = "base"
                             model = model_cls()
+
+                            mods_info[model_name]["model_cfg"] = {
+                                "cfg_type": "default_cfg",
+                                "cfg_pars": {},
+                            }
                         else:
                             model_type = "common"
 
                             if model_params_user:
                                 model = model_cls(**model_params_user)
+
+                                mods_info[model_name]["model_cfg"] = {
+                                    "cfg_type": "user_cfg",
+                                    "cfg_pars": model_params_user,
+                                }
                             else:
                                 model = model_cls()
+
+                                mods_info[model_name]["model_cfg"] = {
+                                    "cfg_type": "default_cfg",
+                                    "cfg_pars": {},
+                                }
 
                         if (
                             model_type == "base"
@@ -1114,11 +1179,9 @@ class Adjustmenter:
 
                             model.fit(np.array(x_train), np.array(y_train))
 
-                            # TODO: later out model.params_ to log and verbose-file
-
                             y_test = model.predict(np.array(x_train))
-                            # !!! TODO:
-                            # Диагностический вывод будет всех метрик
+
+                            # Диагностический вывод всех метрик
                             result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
                             result_predict[model_idx]["rmse"] = root_mean_squared_error(
                                 y_train, y_test
@@ -1156,6 +1219,23 @@ class Adjustmenter:
                                 result_predict[model_idx]["y_future_predict"].insert(
                                     idx, np.nan
                                 )
+
+                            mods_info[model_name]["train_metrics"] = {
+                                "r2": result_predict[model_idx]["r2"],
+                                "rmse": result_predict[model_idx]["rmse"],
+                                "mae": result_predict[model_idx]["mae"],
+                            }
+                            mods_info[model_name]["data_local"] = {}
+                            mods_info[model_name]["data_local"]["past"] = {
+                                self.time_depth: result_predict[model_idx][
+                                    "y_past_predict"
+                                ]
+                            }
+                            mods_info[model_name]["data_local"]["future"] = {
+                                self.time_forecast: result_predict[model_idx][
+                                    "y_future_predict"
+                                ]
+                            }
 
                         else:
                             logging_err_status(model_type)
@@ -1214,7 +1294,7 @@ class Adjustmenter:
             y_past_predict = []  # x_past_predict
             y_future_predict = []  # x_future_predict
 
-        return list(y_past_predict), list(y_future_predict)
+        return list(y_past_predict), list(y_future_predict), mods_info
 
     def get_local_forecast(self, station: dict) -> dict:
         logging.info(
@@ -1222,6 +1302,8 @@ class Adjustmenter:
             station["code"],
             station["full_name"],
         )
+
+        self.station_calc_info[station["code"]] = {}
 
         if "om_time_past" in station:
             time_past = station["om_time_past"][self.time_depth]
@@ -1292,9 +1374,15 @@ class Adjustmenter:
                     else:
                         par_key = "default"
 
-                    mod_local_past, mod_local_future = self._get_ml_forecast(
-                        forecast_type, par_key, train_predict_sets
+                    mod_local_past, mod_local_future, models_info = (
+                        self._get_ml_forecast(
+                            forecast_type, par_key, train_predict_sets
+                        )
                     )
+
+                    self.station_calc_info[station["code"]][
+                        par_short_name
+                    ] = models_info
 
                     parameter["om_data_local"] = {}
                     parameter["om_data_local"]["past"] = {}
