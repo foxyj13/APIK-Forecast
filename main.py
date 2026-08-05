@@ -2,24 +2,22 @@
 
 import argparse
 import datetime
-import re
-
-# from datetime import datetime
 import logging
 import os
+import pickle
+import re
 import sys
 from copy import deepcopy
 from configparser import ConfigParser
 from logging.handlers import TimedRotatingFileHandler
 
-import json
 import openpyxl
 
-from plotter import Plotter
-from plotter_js import PlotterJS
+from adjustmenter import Adjustmenter
 from dbreader import DBReader
 from omreader import OMReader
-from adjustmenter import Adjustmenter
+from plotter import Plotter
+from plotter_js import PlotterJS
 
 
 def read_args():
@@ -195,7 +193,7 @@ def get_station_info(
 
     # --------- Сохранение информации о метео-параметрах (имена, ряды данных наблюдений, ряды прогнозов, оценки) ---------
     st_info["parameters"] = {}
-    for par_name, par_info in station["parameters"].item():
+    for par_name, par_info in station["parameters"].items():
         st_par_info = {}
         st_par_info["name"] = par_info["name"]
         st_par_info["code"] = par_info["code"]
@@ -215,8 +213,14 @@ def get_station_info(
             station["code"], par_name
         )
 
-        st_par_info["data_local"] = par_info["om_data_local"]
-        st_par_info["data_local_no_corr"] = par_info["om_data_local_no_corr"]
+        st_par_info["data_local"] = (
+            par_info["om_data_local"] if "om_data_local" in par_info else {}
+        )
+        st_par_info["data_local_no_corr"] = (
+            par_info["om_data_local_no_corr"]
+            if "om_data_local_no_corr" in par_info
+            else {}
+        )
 
         st_info["parameters"][par_name] = st_par_info
 
@@ -254,12 +258,10 @@ def main():
     mode = args.mode
     time_depth = args.time_depth
     time_forecast = args.time_forecast
-    add_globforecast_plot = True if args.add_globforecast_plot == "yes" else False
-    now_date = datetime.datetime.strptime(
-        args.now_date, "%Y-%m-%d"
-    ).date()  # args.now_date
+    add_globforecast_plot = args.add_globforecast_plot.lower() == "yes"
+    now_date = datetime.datetime.strptime(args.now_date, "%Y-%m-%d").date()
 
-    hist_forecast = True if args.forecast_type == "historical" else False
+    hist_forecast = args.forecast_type.lower() == "historical"
 
     # ------------ Чтение конфигурационного файла .ini (args.config) ------------
     config = ConfigParser()
@@ -279,8 +281,8 @@ def main():
     if not os.path.exists(main_config["web-folder"]):
         os.mkdir(main_config["web-folder"])
 
-    if not os.path.exists(main_config["ml-json-folder"]):
-        os.mkdir(main_config["ml-json-folder"])
+    if not os.path.exists(main_config["ml-info-folder"]):
+        os.mkdir(main_config["ml-info-folder"])
 
     init_logging(config)
     logging.info("Начинаем работу!")
@@ -333,35 +335,33 @@ def main():
             )
 
     plot_mode = main_config.get("plot_mode", "")
-    if plot_mode == "static":
-        logging.info("Результат будет представлен в виде статичных рисунков")
-    elif plot_mode == "interactive":
-        logging.info("Результат будет представлен в виде интерактивных графиков")
-    else:
-        logging.error(
-            "Задан неизвестный тип отрисовки. Проверьте опцию plot_mode в файле config.ini. Возможные значения: static или interactive"
+    if plot_mode.lower() == "static":
+        logging.info("Результат будет представлен только в виде статичных рисунков")
+    elif plot_mode.lower() == "interactive":
+        logging.info(
+            "Результат будет представлен в виде статичных и интерактивных графиков"
         )
-        sys.exit(1)
+    else:
+        logging.error("Отрисовка производиться не будет")
 
-    # ------------ Формирование имени JSON-файла для записи всей информации по работе программы ------------
-    fname = (
-        "apik-forecast_"
-        + args.forecast_type
-        + "_"
-        + str(now_date)
-        + "_td"
-        + time_depth
-        + "_tf"
-        + time_forecast
-        + "_"
-        + main_config["ml-json-file-suffix"]
-        + ".json"
-    )
-    fname_json = os.path.join(main_config["ml-json-folder"], fname)
-
-    ml_verbose = main_config["ml-verbose"] == "true"
+    # ------------ Формирование имени pickle-файла для записи всей информации по работе программы ------------
+    ml_verbose = main_config["ml-verbose"].lower() == "true"
     if ml_verbose:
-        logging.info("Вся информация о расчетах будет выведена в JSON-файл %s", fname)
+        fname = (
+            "apik-forecast_"
+            + main_config["experiment-name"]
+            + "_"
+            + args.forecast_type
+            + "_"
+            + str(now_date)
+            + "_td"
+            + time_depth
+            + "_tf"
+            + time_forecast
+            + ".pkl"
+        )
+        fname_pkl = os.path.join(main_config["ml-info-folder"], fname)
+        logging.info("Вся информация о расчетах будет выведена в pickle-файл %s", fname)
 
     # ------------ Сохранение в словарь входных аргументов и конфигурации (после корректировок) ----------
     data_log_json["args"]["mode"] = mode
@@ -517,7 +517,10 @@ def main():
                         )
 
                         plotter = Plotter(
-                            dict(main_config), glob_forecast=True, local_forecast=True
+                            dict(main_config),
+                            glob_forecast=True,
+                            local_forecast=True,
+                            str_now_date=str(now_date),
                         )
                     else:
                         # Отрисовка наблюдения + локальный (уточненный) прогноз
@@ -526,7 +529,10 @@ def main():
                         )
 
                         plotter = Plotter(
-                            dict(main_config), glob_forecast=False, local_forecast=True
+                            dict(main_config),
+                            glob_forecast=False,
+                            local_forecast=True,
+                            str_now_date=str(now_date),
                         )
                 else:
                     # Отрисовка наблюдения + глобальный (сырой) прогноз
@@ -535,38 +541,83 @@ def main():
                     )
 
                     plotter = Plotter(
-                        dict(main_config), glob_forecast=True, local_forecast=False
+                        dict(main_config),
+                        glob_forecast=True,
+                        local_forecast=False,
+                        str_now_date=str(now_date),
                     )
 
-                for station in stations:
-                    plotter.make_table_forecast(station=station, time_depth=time_depth)
-                    plotter.make_plots_forecast(
-                        station=station,
-                        time_depth=time_depth,
-                        time_forecast=time_forecast,
-                    )
+                if (plot_mode == "static") or (plot_mode == "interactive"):
+                    # Построение статичных графиков
+                    for station in stations:
+                        plotter.make_table_forecast(
+                            station=station, time_depth=time_depth
+                        )
+                        plotter.make_plots_forecast(
+                            station=station,
+                            time_depth=time_depth,
+                            time_forecast=time_forecast,
+                        )
 
+                if plot_mode == "interactive":
+                    # Построение интерактивных графиков
+                    # Выбор перерменных для отрисовки:
+                    #   если указаны в config.ini, то берем их; иначе все, что есть в наличие
+                    if main_config.get("variables", ""):
+                        variables = list(
+                            map(str.strip, main_config["variables"].split(","))
+                        )
+                    else:
+                        all_variables_names = set()
+                        for station in stations:
+                            all_variables_names.update(
+                                set(station["parameters"].keys())
+                            )
+                        variables = list(all_variables_names)
+
+                    if stations:
+                        # Отрисовка данных
+                        logging.info(
+                            "Строим дополнительно интерактивные графики для локальных прогнозов"
+                        )
+                        plotter_js = PlotterJS(
+                            config=dict(main_config),
+                            stations=stations,
+                            time_depth=time_depth,
+                            time_forecast=time_forecast,
+                        )
+                        plotter_js.make_plots(variables=variables)
+
+                # Получение информации о расчетах (модели, их настройки, промежуточные оценки и все результаты)
                 for station in stations:
                     station_info = get_station_info(
                         station, time_depth, time_forecast, ml_adjust
                     )
                     data_log_json["stations"].append(station_info)
 
-                # Вывод data_log_json в JSON-файл
+                # Вывод data_log_json в pickle-файл
                 if ml_verbose:
-                    with open(fname_json, "w", encoding="utf-8") as f_json:
-                        json.dump(data_log_json, f_json, ensure_ascii=False, indent=4)
+                    with open(fname_pkl, "wb") as f_pkl:
+                        pickle.dump(data_log_json, f_pkl)
 
             else:
                 logging.error("Не удалось получить глобальные прогнозы!")
 
         else:
-            # ------------ Отрисовка только наблюдений, экспорт, html ------------
-            all_stations = stations
+            # ------------ Отрисовка только наблюдений ------------
+            if (plot_mode == "static") or (plot_mode == "interactive"):
+                logging.info("Строим статичные графики для наблюдений")
+
+                plotter = Plotter(dict(main_config))
+
+                for station in stations:
+                    plotter.make_table(station=station)
+                    plotter.make_plots(station=station, time_depth=time_depth)
 
             if plot_mode == "interactive":
                 # Построение интерактивных графиков
-                # Выбор перерменных для отрисовки (если указаны в config.ini, то: берем их; иначе: все)
+                # Выбор перерменных для отрисовки:
+                #   если указаны в config.ini, то берем их; иначе все, что есть в наличие
                 if main_config.get("variables", ""):
                     variables = list(
                         map(str.strip, main_config["variables"].split(","))
@@ -577,30 +628,17 @@ def main():
                         all_variables_names.update(set(station["parameters"].keys()))
                     variables = list(all_variables_names)
 
-                if all_stations:
+                if stations:
                     # Отрисовка данных
-                    logging.info("Строим интерактивные графики")
+                    logging.info(
+                        "Строим дополнительно интерактивные графики для наблюдений"
+                    )
                     plotter_js = PlotterJS(
                         config=dict(main_config),
-                        stations=all_stations,
+                        stations=stations,
                         time_depth=time_depth,
                     )
                     plotter_js.make_plots(variables=variables)
-
-            elif plot_mode == "static":
-                # Построение статичных графиков
-                logging.info("Строим статичные графики")
-                plotter = Plotter(dict(main_config))
-                if all_stations:
-                    for station in all_stations:
-                        plotter.make_table(station=station)
-                        plotter.make_plots(station=station, time_depth=time_depth)
-
-                        # Экспорт в CSV (если включен в congig.ini)
-                        #   Проверка на включенность опции внутри самой функции export_to_csv
-                        plotter.export_to_csv(station=station, time_depth=time_depth)
-            else:
-                logging.error('Неизвестный режим отрисовки: "%s".', plot_mode)
 
     logging.info("Заканчиваем работу")
 
