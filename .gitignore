@@ -26,7 +26,7 @@ Thumbs.db
 
 # Файлы/структура проекта
 config/
-export_data/
+export_ml/
 images/
 images_save/
 input/
