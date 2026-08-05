@@ -10,7 +10,9 @@ import numpy as np
 
 
 class Plotter:
-    def __init__(self, config: dict, glob_forecast=False, local_forecast=False):
+    def __init__(
+        self, config: dict, glob_forecast=False, local_forecast=False, str_now_date=None
+    ):
         self._config = config
         self.export_enabled = config.get("export-enable", "false").lower() == "true"
         # self.export_enabled = config.getboolean("export-enable")
@@ -18,6 +20,12 @@ class Plotter:
 
         self.glob_forecast = glob_forecast
         self.local_forecast = local_forecast
+
+        self.str_now_date = (
+            str_now_date if str_now_date is not None else str(datetime.date.today())
+        )
+
+        self.experiment_name = config.get("experiment-name", "exp0")
 
         self.img_bw = config.get("images-bw", "false").lower() == "true"
         if self.img_bw:
@@ -111,8 +119,8 @@ class Plotter:
             station["full_name"],
             year,
         )
-
-        filename = f"{station['code']}_{year}.csv"
+        # out_filename = f"{self.experiment_name}_{station['code']}_{parameter['code']}_{self.str_now_date}_td{time_depth}_tf{time_forecast}{suffix_floc}{suffix_fglob}.png"
+        filename = f"{self.experiment_name}_{station['code']}_{year}.csv"
         filename = os.path.join(self._config["csv-folder"], filename)
 
         try:
@@ -149,7 +157,7 @@ class Plotter:
 
         title_text = station["full_name"]
         fig_border = "steelblue"
-        out_filename = f"{station['code']}_{self._config['recent-table-suffix']}.png"
+        out_filename = f"{self.experiment_name}_{station['code']}_{self.str_now_date}_{self._config['recent-table-suffix']}.png"
         out_filename = os.path.join(self._config["images-folder"], out_filename)
 
         timestamp = station["db_time_past"]["recent"].strftime("%d.%m.%Y %H:%M")
@@ -251,7 +259,7 @@ class Plotter:
 
         title_text = station["full_name"]
         fig_border = "steelblue"
-        out_filename = f"{station['code']}_{self._config['recent-table-suffix']}.png"
+        out_filename = f"{self.experiment_name}_{station['code']}_table_{self.str_now_date}_{self._config['recent-table-suffix']}.png"
         out_filename = os.path.join(self._config["images-folder"], out_filename)
 
         recent_idx = self._get_recent_idx(station["parameters"], time_depth)
@@ -442,7 +450,7 @@ class Plotter:
                 size=10,
                 weight="light",
             )
-            out_filename = f"{station['code']}_{parameter['code']}_{self._config[f'{time_scale}-plot-suffix']}.png"
+            out_filename = f"{self.experiment_name}_{station['code']}_{parameter['code']}_{self.str_now_date}_{self._config[f'{time_scale}-plot-suffix']}.png"
             out_filename = os.path.join(self._config["images-folder"], out_filename)
 
             fig = plt.gcf()
@@ -675,7 +683,7 @@ class Plotter:
             )
 
             # Сохранение в файл .png
-            out_filename = f"{station['code']}_{parameter['code']}_{time_depth}-past_{time_forecast}-future{suffix_floc}{suffix_fglob}.png"
+            out_filename = f"{self.experiment_name}_{station['code']}_{parameter['code']}_{self.str_now_date}_td{time_depth}_tf{time_forecast}{suffix_floc}{suffix_fglob}.png"
             out_filename = os.path.join(self._config["images-folder"], out_filename)
 
             fig = plt.gcf()
