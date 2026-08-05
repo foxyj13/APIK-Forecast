@@ -1,8 +1,8 @@
 import logging
+import math
 import os
 
-htmlfile_template = \
-"""
+htmlfile_template = """
 <html>
 <meta charset="UTF-8" />
 <head>
@@ -23,14 +23,12 @@ htmlfile_template = \
 </html>
 """
 
-body_template = \
-"""
+body_template = """
     <div id='$$plot_div_id$$' style='height:600px;'></div>
     <script src='$$js_filename$$'></script>
 """
 
-jsfile_template = \
-"""
+jsfile_template = """
 $$vars_descripions$$
 
 var data = [$$var_list$$];
@@ -73,8 +71,7 @@ var layout = {
 Plotly.newPlot($$plot_div_id$$, data, layout);
 """
 
-var_template = \
-"""
+var_template = """
 var $$js_var_name$$ = {
     x: [$$x$$],
     y: [$$y$$],
@@ -83,15 +80,19 @@ var $$js_var_name$$ = {
 };
 """
 
+
 class PlotterJS:
-    def __init__(self, config: dict, stations, time_depth):
+    def __init__(self, config: dict, stations, time_depth, time_forecast=None):
         self._config = config
         self._stations = stations
         self._time_depth = time_depth
+        self._time_forecast = "0d" if time_forecast is None else time_forecast
 
     def make_plots(self, variables: list[str]):
-        html_filename = self._config['html-plot-basename']+f"_{self._config['name']}"+".html"
-        html_filename = os.path.join(self._config['web-folder'], html_filename)
+        html_filename = (
+            self._config["html-plot-basename"] + f"_{self._config['name']}" + ".html"
+        )
+        html_filename = os.path.join(self._config["web-folder"], html_filename)
         with open(html_filename, "w", encoding="utf8") as htmlfile:
             bodies = []
             for variable in variables:
@@ -102,50 +103,118 @@ class PlotterJS:
                 body = body_template.replace("$$plot_div_id$$", plot_div_id)
                 body = body.replace("$$js_filename$$", js_filename)
                 bodies.append(body)
-            htmlfile_text = htmlfile_template.replace("$$title$$", self._config['html-plot-title'])
+
+            htmlfile_text = htmlfile_template.replace(
+                "$$title$$", self._config["html-plot-title"]
+            )
             htmlfile_text = htmlfile_text.replace("$$body$$", "".join(bodies))
             htmlfile.write(htmlfile_text)
 
     def _make_plot(self, variable: str) -> tuple[str, str]:
         js_var_names = []
-        js_filename = self._config['js-plot-basename']+f"_{variable}"+f"_{self._config['name']}"+".js"
-        js_filename = os.path.join(self._config['web-folder'], js_filename)
-        plot_div_id = "plot_"+variable
+        js_filename = (
+            self._config["js-plot-basename"]
+            + f"_{self._config['name']}"
+            + f"_{variable}"
+            + ".js"
+        )
+        js_filename = os.path.join(self._config["web-folder"], js_filename)
+        plot_div_id = "plot_" + variable
         parameter_name = ""
         with open(js_filename, "w", encoding="utf8") as plotfile:
             vars_descs_list = []
             for idx, station in enumerate(self._stations):
                 # Loop by stations.
-                if variable in station['parameters']:
-                    parameter = station['parameters'][variable]
-                    x_data = station['time'][self._time_depth]
-                    y_data = parameter['data'][self._time_depth]
-                    valid_y_data = [val for val in y_data if val]
+                if variable in station["parameters"]:
+                    parameter = station["parameters"][variable]
+
+                    if int(self._time_forecast[:-1]) == 0:
+                        # Будет отрисовка наблюдений
+                        x_data = station["db_time_past"][self._time_depth]
+                        y_data = parameter["data"][self._time_depth]
+                    else:
+                        # Будет отрисовка локальных прогнозов, если они есть
+                        if (
+                            (self._time_depth in station["om_time_past"])
+                            and (self._time_forecast in station["om_time_future"])
+                        ) and (
+                            ("om_data_local" in parameter)
+                            and (
+                                (self._time_depth in parameter["om_data_local"]["past"])
+                                and (
+                                    self._time_forecast
+                                    in parameter["om_data_local"]["future"]
+                                )
+                            )
+                        ):
+                            x_data = (
+                                station["om_time_past"][self._time_depth]
+                                + station["om_time_future"][self._time_forecast][1:]
+                            )
+                            y_data = (
+                                parameter["om_data_local"]["past"][self._time_depth]
+                                + parameter["om_data_local"]["future"][
+                                    self._time_forecast
+                                ][1:]
+                            )
+                        else:
+                            x_data = []
+                            y_data = []
+
+                    valid_y_data = [
+                        val
+                        for val in y_data
+                        if (val is not None) and (not math.isnan(val))
+                    ]
                     if not x_data or not valid_y_data:
-                        logging.warning("Внимание! Нет значений. Пропускаю станцию %s.", station['full_name'])
+                        logging.warning(
+                            "Внимание! Нет значений. Пропускаю станцию %s.",
+                            station["full_name"],
+                        )
                         continue
                     min_date, max_date = min(x_data), max(x_data)
                     parameter_name = parameter["short_name"]
                     js_var_name = f"station{idx}"
                     js_var_names.append(js_var_name)
                     x = [f"'{val}'" for val in x_data]
-                    y = [f"'{val}'" if val else "''" for val in y_data]
+                    # y = [f"'{val}'" if val else "''" for val in y_data]
+                    y = [
+                        (
+                            f"'{val}'"
+                            if (val is not None) and (not math.isnan(val))
+                            else "''"
+                        )
+                        for val in y_data
+                    ]
                     # Add station data variable.
                     var_description = var_template
-                    var_description = var_description.replace("$$js_var_name$$", js_var_name)
+                    var_description = var_description.replace(
+                        "$$js_var_name$$", js_var_name
+                    )
                     var_description = var_description.replace("$$x$$", ",".join(x))
                     var_description = var_description.replace("$$y$$", ",".join(y))
-                    var_description = var_description.replace("$$station_full_name$$", station['full_name'])
+                    var_description = var_description.replace(
+                        "$$station_full_name$$", station["full_name"]
+                    )
                     vars_descs_list.append(var_description)
                 else:
-                    logging.info("Переменной %s нет у станции %s", variable, station['full_name'])
+                    logging.info(
+                        "Переменной %s нет у станции %s", variable, station["full_name"]
+                    )
+
             if not parameter_name:
-                logging.error("Переменная %s не найдена ни в одной станции! График не будет построен!", variable)
+                logging.error(
+                    "Переменная %s не найдена ни в одной станции! График не будет построен!",
+                    variable,
+                )
                 return "", ""
+
             # Write JS file.
             jsfile_text = jsfile_template
-            jsfile_text = jsfile_text.replace("$$vars_descripions$$", ''.join(vars_descs_list))
-            jsfile_text = jsfile_text.replace("$$var_list$$", ','.join(js_var_names))
+            jsfile_text = jsfile_text.replace(
+                "$$vars_descripions$$", "".join(vars_descs_list)
+            )
+            jsfile_text = jsfile_text.replace("$$var_list$$", ",".join(js_var_names))
             jsfile_text = jsfile_text.replace("$$parameter_name$$", parameter_name)
             jsfile_text = jsfile_text.replace("$$plot_div_id$$", plot_div_id)
             jsfile_text = jsfile_text.replace("$$min_date$$", str(min_date))
