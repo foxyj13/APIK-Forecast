@@ -35,3 +35,4 @@ log/
 web/
 requirements_*.txt
 *.ipynb
+.cache.sqlite
