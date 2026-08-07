@@ -31,7 +31,6 @@ images/
 images_save/
 input/
 log/
-run/
 web/
 requirements_*.txt
 *.ipynb

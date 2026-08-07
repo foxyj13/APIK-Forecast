@@ -265,9 +265,10 @@ def main():
 
     # ------------ Чтение конфигурационного файла .ini (args.config) ------------
     config = ConfigParser()
-    config.read(
-        os.path.join(str(os.path.dirname(__file__)), args.config), encoding="utf8"
-    )
+    # config.read(
+    #     os.path.join(str(os.path.dirname(__file__)), "../..", args.config), encoding="utf8"
+    # )
+    config.read(args.config, encoding="utf8")
     db_config = config["DB"]
     om_config = config["OM"]
     main_config = config["main"]
