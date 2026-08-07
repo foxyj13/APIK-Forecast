@@ -25,7 +25,8 @@ Thumbs.db
 .DS_Store
 
 # Файлы/структура проекта
-config/
+config/*.ini
+config/*.cfg
 export_ml/
 images/
 images_save/
