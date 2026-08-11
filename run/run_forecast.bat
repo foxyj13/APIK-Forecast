@@ -1,14 +1,15 @@
 @echo off
-setlocal EnabledDelayedExpansion
+chcp 65001 > nul
+setlocal EnableDelayedExpansion
 
 set "CFG_FILENAME=run_forecast.cfg"
 
 :: 1. Указываем путь к файлу конфигурации
-set "config_file=%~dp0..\config\!CFG_FILENAME!"
+set "config_file=%~dp0..\config\%CFG_FILENAME%"
 
 :: 2. Проверяем, существует ли файл
-if not exist "!config_file!" (
-    echo [ОШИБКА] Файл с аргументами для запуска прогноза не найден: !config_file!
+if not exist "%config_file%" (
+    echo [ОШИБКА] Файл с аргументами для запуска прогноза не найден: %config_file%
     pause
     exit /b
 )
@@ -40,5 +41,9 @@ echo Период прогноза: %TIME_FORECAST%
 echo Тип глобального прогноза: %FORECAST_TYPE%
 echo Текущая дата: %NOW_DATE%
 echo Конфигурационный файл: %CONFIG_FILE%
+
+echo Запуск расчета прогноза
+
+python ..\src\forecast\main.py --mode=%MODE% --add-globforecast-plot=%ADD_GLOBFORECAST_PLOT% --time-depth=%TIME_DEPTH% --time-forecast=%TIME_FORECAST% --forecast-type=%FORECAST_TYPE% --now-date=%NOW_DATE% --config=%CONFIG_FILE%
 
 pause
