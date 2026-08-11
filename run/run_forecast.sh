@@ -47,3 +47,5 @@ echo "Тип глобального прогноза : ${FORECAST_TYPE:-Не з�
 echo "Текущая дата : ${NOW_DATE:-Не задан}"
 echo "Конфигурационный файл : ${CONFIG_FILE:-Не задан}"
 echo "-----------------------------------"
+
+python ../src/forecast/main.py --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE
