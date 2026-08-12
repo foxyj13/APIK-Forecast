@@ -1,9 +1,14 @@
 import argparse
+import datetime
 import logging
+import math
 import os
 import sys
+import subprocess
 from configparser import ConfigParser
 from logging.handlers import TimedRotatingFileHandler
+
+from joblib import Parallel, delayed
 
 from reporter import Reporter
 
@@ -30,7 +35,7 @@ def init_logging(log_folder):
 # model_set = [model.strip() for model in par_model_cfg["model-set"].split(",")]
 
 
-def get_args() -> dict:
+def init() -> dict:
 
     def check_qc_case(qc_case: str) -> bool:
         cases = ["need_forecast", "forecast_prepared"]
@@ -91,8 +96,11 @@ def get_args() -> dict:
     data_folder = forecast_main_config["ml-info-folder"]
     exp_name = forecast_main_config["experiment-name"]
 
-    # if not os.path.exists(log_folder):
-    #     os.mkdir(log_folder)
+    if not os.path.exists(log_folder):
+        os.mkdir(log_folder)
+
+    if not os.path.exists(main_args["output-folder"]):
+        os.mkdir(main_args["output-folder"])
 
     # Старт логирования
     init_logging(log_folder)
@@ -123,19 +131,49 @@ def get_args() -> dict:
         )
         return {}
 
+    if (
+        main_args["mode"] == "qc" and main_args["case"] == "forecast_prepared"
+    ) or main_args["mode"] == "export":
+        if not os.path.exists(data_folder):
+            logging.error(
+                "Неверно указана или отсутствует директория с данными (с pkl-файлами): %s",
+                data_folder,
+            )
+            return {}
+
     return {
         "main-args": main_args,
         "forecast-args": forecast_args,
-        "data_args": {
-            "log-folder": log_folder,
+        "data-args": {
+            # "log-folder": log_folder,
             "data-folder": data_folder,
             "experiment-name": exp_name,
         },
     }
 
 
+def run_forecast(
+    forecast_main_program: str, args: dict, now_date: datetime.date
+) -> bool:
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                f"{forecast_main_program} --mode={args['forecast-args']['mode']} --add-globforecast-plot={args['forecast-args']['add-globforecast-plot']} --time-depth={args['forecast-args']['time-depth']} --time-forecast={args['forecast-args']['time-forecast']} --forecast-type={args['forecast-args']['forecast-type']} --now-date={now_date} --config={args['forecast-args']['config']}",
+            ],
+            capture_output=True,  # Captures stdout and stderr
+            text=True,  # Returns strings instead of bytes
+            check=True,  # Throws CalledProcessError if the script fails
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error("Script failed with exit code: %s", e.returncode)
+        logging.error("Error output: %s", e.stderr)
+        return False
+
+
 def main():
-    args = get_args()
+    args = init()
 
     if not args:
         logging.error("Проверьте настройки программы в файлах .ini")
@@ -144,12 +182,42 @@ def main():
 
     if args["main-args"]["mode"] == "qc":
         logging.info("Запуск в режиме генерации QC-отчета")
+
+        start_date = datetime.datetime.strptime(
+            args["main-args"]["start-date"], "%Y-%m-%d"
+        ).date()
+        end_date = datetime.datetime.strptime(
+            args["main-args"]["end-date"], "%Y-%m-%d"
+        ).date()
+        step_days = int(args["main-args"]["step-date"][:-1])
+
+        n_steps = math.ceil((end_date - start_date).days / step_days) + 1
+
+        now_dates = [
+            start_date + datetime.timedelta(days=step_days * x) for x in range(n_steps)
+        ]
+        # Добавление дополнительного прогноза, чтобы было достаточно наблюдений для оценки качества
+        #   сам последний прогноз использоваться не будет
+        now_dates.append(
+            now_dates[-1]
+            + datetime.timedelta(days=int(args["forecast-args"]["time-forecast"][:-1]))
+        )
+
         if args["main-args"]["case"] == "need_forecast":
             logging.info("Запуск расчета прогнозов")
 
-            # import subprocess
-            # for r in range(5):
-            #     subprocess.run(f"main.py --sd {r}")
+            forecast_main_program = os.path.join("src", "forecast", "main.py")
+
+            # Распараллеливание цикла запуска расчета прогнозов
+            # delayed_calls = [
+            #     delayed(run_forecast)(forecast_main_program, args, now_date)
+            #     for now_date in now_dates
+            # ]
+            # result = Parallel(j_jobs=-1)(delayed_calls)
+
+            # Последовательный запуск расчета прогнозов
+            for now_date in now_dates:
+                result = run_forecast(forecast_main_program, args, now_date)
 
         elif args["main-args"]["case"] == "forecast_prepared":
             logging.info(
@@ -157,7 +225,7 @@ def main():
             )
 
         logging.info("Запуск генерации QC-отчета")
-        qc_reporter = Reporter(args)
+        qc_reporter = Reporter(args, now_dates)
         qc_reporter.gen_qc_report()
 
     if args["main-args"]["mode"] == "export":
@@ -166,5 +234,5 @@ def main():
         # exporter.export_data()
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     main()
