@@ -254,6 +254,8 @@ def main():
 
     # ============ Чтение и проверка всех настроек =============
     # ------------ Получение аргументов программы ------------
+    # path_project = os.path.join(str(os.path.dirname(__file__)), "..", "..")
+
     args = read_args()
     mode = args.mode
     time_depth = args.time_depth
@@ -362,7 +364,9 @@ def main():
             + ".pkl"
         )
         fname_pkl = os.path.join(main_config["ml-info-folder"], fname)
-        logging.info("Вся информация о расчетах будет выведена в pickle-файл %s", fname)
+        logging.info(
+            "Вся информация о расчетах будет выведена в pickle-файл %s", fname_pkl
+        )
 
     # ------------ Сохранение в словарь входных аргументов и конфигурации (после корректировок) ----------
     data_log_json["args"]["mode"] = mode
