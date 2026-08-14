@@ -113,6 +113,14 @@ def init() -> dict:
                 "Ошибочный вариант работы (case) в режиме QC: %s", main_args["case"]
             )
             return {}
+        if int(main_args["step-date"][:-1]) > int(forecast_args["time-depth"][:-1]):
+            logging.warning(
+                "Шаг расчета QC-отчета (step-date = %s) превышает период обучения (time-depth = %s): значение step-date будет заменено на time-depth",
+                main_args["step-date"],
+                forecast_args["time-depth"],
+            )
+            main_args["step-date"] = forecast_args["time-depth"]
+
     elif main_args["mode"] == "export":
         ...
     else:
