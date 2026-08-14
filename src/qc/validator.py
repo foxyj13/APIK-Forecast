@@ -19,7 +19,11 @@ class Validator:
     @staticmethod
     def _get_self_metrics(data: list) -> dict:
 
-        if sum(np.isnan(data)) / len(data) < 0.1:
+        data_nan = [
+            (x is None) or (isinstance(x, float) and math.isnan(x)) for x in data
+        ]
+
+        if sum(data_nan) / len(data) < 0.1:
             result = {
                 "mean": np.nanmean(data),
                 "med": np.nanmedian(data),
@@ -37,9 +41,7 @@ class Validator:
         return result
 
     @staticmethod
-    def _get_mutual_metrics(
-        time_obs: list, data_obs: list, time_mod: list, data_mod: list
-    ) -> dict:
+    def _get_mutual_metrics(data_obs: list, data_mod: list) -> dict:
 
         def get_pearsonr(data_obs: list, data_mod: list) -> float:
 
@@ -67,65 +69,40 @@ class Validator:
 
             return 1 - top / bot
 
-        if time_obs == time_mod:
-            obs_nan = [
-                (
-                    True
-                    if (x is None) or (isinstance(x, float) and math.isnan(x))
-                    else False
-                )
-                for x in data_obs
-            ]
-            mod_nan = [
-                (
-                    True
-                    if (x is None) or (isinstance(x, float) and math.isnan(x))
-                    else False
-                )
-                for x in data_mod
-            ]
-            if (sum(obs_nan) / len(data_obs) < 0.1) and (
-                sum(mod_nan) / len(data_mod) < 0.1
-            ):
-                nse = get_nse(data_obs, data_mod)
+        obs_nan = [
+            (x is None) or (isinstance(x, float) and math.isnan(x)) for x in data_obs
+        ]
+        mod_nan = [
+            (x is None) or (isinstance(x, float) and math.isnan(x)) for x in data_mod
+        ]
 
-                pearsonr = get_pearsonr(data_obs, data_mod)
-                alpha = variation(data_mod, nan_policy="omit") / variation(
-                    data_obs, nan_policy="omit"
-                )
-                betta = np.nanmean(data_mod) / np.nanmean(data_obs)
-                kge = (
-                    1
-                    - ((pearsonr - 1) ** 2 + (betta - 1) ** 2 + (alpha - 1) ** 2) ** 0.5
-                )
+        if (sum(obs_nan) / len(data_obs) < 0.1) and (
+            sum(mod_nan) / len(data_mod) < 0.1
+        ):
+            nse = get_nse(data_obs, data_mod)
 
-                idx_notnan = ~np.array(obs_nan) * ~np.array(mod_nan)
-                data_obs_np = np.array(data_obs)[idx_notnan]
-                data_mod_np = np.array(data_mod)[idx_notnan]
-                result = {
-                    "rmse": root_mean_squared_error(data_obs_np, data_mod_np),
-                    "r2": r2_score(data_obs_np, data_mod_np),
-                    "me": np.nanmean(
-                        [data_mod[idx] - data_obs[idx] for idx in range(len(data_obs))]
-                    ),
-                    "mae": mean_absolute_error(data_obs_np, data_mod_np),
-                    "mre": mean_absolute_percentage_error(data_obs_np, data_mod_np),
-                    "nse": nse,
-                    "kge": kge,
-                }
-            else:
-                result = {
-                    "rmse": None,
-                    "r2": None,
-                    "me": None,
-                    "mae": None,
-                    "mre": None,
-                    "nse": None,
-                    "kge": None,
-                }
+            pearsonr = get_pearsonr(data_obs, data_mod)
+            alpha = variation(data_mod, nan_policy="omit") / variation(
+                data_obs, nan_policy="omit"
+            )
+            betta = np.nanmean(data_mod) / np.nanmean(data_obs)
+            kge = 1 - ((pearsonr - 1) ** 2 + (betta - 1) ** 2 + (alpha - 1) ** 2) ** 0.5
+
+            idx_notnan = ~np.array(obs_nan) * ~np.array(mod_nan)
+            data_obs_np = np.array(data_obs)[idx_notnan]
+            data_mod_np = np.array(data_mod)[idx_notnan]
+            result = {
+                "rmse": root_mean_squared_error(data_obs_np, data_mod_np),
+                "r2": r2_score(data_obs_np, data_mod_np),
+                "me": np.nanmean(
+                    [data_mod[idx] - data_obs[idx] for idx in range(len(data_obs))]
+                ),
+                "mae": mean_absolute_error(data_obs_np, data_mod_np),
+                "mre": mean_absolute_percentage_error(data_obs_np, data_mod_np),
+                "nse": nse,
+                "kge": kge,
+            }
         else:
-            # Возможно, потом нужно будет как-то попробовать состыковать временные оси и посчитать метрики,
-            #   но пока так:
             result = {
                 "rmse": None,
                 "r2": None,
@@ -138,74 +115,160 @@ class Validator:
 
         return result
 
-    def get_metrics(self, station: dict) -> dict:
+    def get_metrics(self, station_now: dict, station_next: dict) -> dict:
+
+        def _get_obs_future_idx(
+            now_timeline_future: list, next_timeline_past: list
+        ) -> tuple:
+            idx_start = next_timeline_past.index(now_timeline_future[0])
+            idx_end = next_timeline_past.index(now_timeline_future[-1])
+
+            return idx_start, idx_end
 
         logging.info(
-            "Расчет метрик для станции %s (%s)", station["code"], station["full_name"]
+            "Расчет метрик для станции %s (%s)",
+            station_now["code"],
+            station_now["full_name"],
         )
 
-        for _, parameter in station["parameters"].items():
-            parameter["metrics"] = {}
+        obs_future_start, obs_future_end = _get_obs_future_idx(
+            station_now["timeline"]["future"][self.time_forecast],
+            station_next["timeline"]["past"][self.time_depth],
+        )
+
+        metrics = {}
+
+        for par_name, parameter in station_now["parameters"].items():
+            metrics[par_name] = {}
+            # parameter["metrics"] = {}
 
             # Расчет метрик для наблюдений
             if ("data" in parameter) and (parameter["data"][self.time_depth]):
-                parameter["metrics"]["obs"] = self._get_self_metrics(
+                metrics[par_name]["obs"] = self._get_self_metrics(
                     parameter["data"][self.time_depth]
                 )
 
-            # Расчет метрик для прогноза
-            if ("om_data_glob" in parameter) and (
-                parameter["om_data_glob"]["past"][self.time_depth]
-            ):
-                parameter["metrics"]["glob_past"] = self._get_self_metrics(
-                    parameter["om_data_glob"]["past"][self.time_depth]
-                )
+                # Расчет метрик для локального прогноза
+                metrics[par_name]["local"] = {}
+                if "data_local" in parameter:
+                    # Индивидуальные метрики
+                    if ("past" in parameter["data_local"]) and (
+                        parameter["data_local"]["past"][self.time_depth]
+                    ):
+                        metrics[par_name]["local"]["past"] = self._get_self_metrics(
+                            parameter["data_local"]["past"][self.time_depth]
+                        )
 
-                if ("om_data_glob" in parameter) and (
-                    parameter["om_data_glob"]["future"][self.time_forecast]
-                ):
-                    parameter["metrics"]["glob_future"] = self._get_self_metrics(
-                        parameter["om_data_glob"]["future"][self.time_forecast]
-                    )
+                        metrics[par_name]["local"]["past"].update(
+                            self._get_mutual_metrics(
+                                parameter["data"][self.time_depth],
+                                parameter["data_local"]["past"][self.time_depth],
+                            )
+                        )
+                    else:
+                        metrics[par_name]["local"]["past"] = {}
 
-                if ("om_data_local" in parameter) and (
-                    parameter["om_data_local"]["past"][self.time_depth]
-                ):
-                    parameter["metrics"]["local_past"] = self._get_self_metrics(
-                        parameter["om_data_local"]["past"][self.time_depth]
-                    )
+                    if ("future" in parameter["data_local"]) and (
+                        parameter["data_local"]["future"][self.time_forecast]
+                    ):
+                        metrics[par_name]["local"]["future"] = self._get_self_metrics(
+                            parameter["data_local"]["future"][self.time_forecast]
+                        )
 
-                if ("om_data_local" in parameter) and (
-                    parameter["om_data_local"]["future"][self.time_forecast]
-                ):
-                    parameter["metrics"]["local_future"] = self._get_self_metrics(
-                        parameter["om_data_local"]["future"][self.time_forecast]
-                    )
+                        if (
+                            "data" in station_next["parameters"][par_name]
+                        ) and station_next["parameters"][par_name]["data"][
+                            self.time_depth
+                        ]:
+                            metrics[par_name]["local"]["future"].update(
+                                self._get_mutual_metrics(
+                                    station_next["parameters"][par_name]["data"][
+                                        self.time_depth
+                                    ][obs_future_start:obs_future_end],
+                                    parameter["data_local"]["future"][
+                                        self.time_forecast
+                                    ],
+                                )
+                            )
+                    else:
+                        metrics[par_name]["local"]["future"] = {}
 
-            # Расчет совместных метрик наблюдения vs глобальный прогноз
-            if (
-                ("om_data_glob" in parameter)
-                and (parameter["om_data_glob"]["past"][self.time_depth])
-                and (parameter["data"][self.time_depth])
-            ):
-                parameter["metrics"]["obs_glob"] = self._get_mutual_metrics(
-                    station["db_time_past"][self.time_depth],
-                    parameter["data"][self.time_depth],
-                    station["om_time_past"][self.time_depth],
-                    parameter["om_data_glob"]["past"][self.time_depth],
-                )
+                else:
+                    metrics[par_name]["local"]["past"] = {}
+                    metrics[par_name]["local"]["future"] = {}
 
-            # Расчет совместных метрик наблюдения vs локальный прогноз
-            if (
-                ("om_data_local" in parameter)
-                and (parameter["om_data_local"]["past"][self.time_depth])
-                and (parameter["data"][self.time_depth])
-            ):
-                parameter["metrics"]["obs_local"] = self._get_mutual_metrics(
-                    station["db_time_past"][self.time_depth],
-                    parameter["data"][self.time_depth],
-                    station["om_time_past"][self.time_depth],
-                    parameter["om_data_local"]["past"][self.time_depth],
-                )
+                # расчет метрик для глобального прогноза
+                if ("om_parameter" in parameter) and (parameter["om_parameter"] != ""):
+                    om_par_name = parameter["om_parameter"]
 
-        return station
+                    if om_par_name in station_now["predictors_data"]:
+                        # Индивидуальные метрики
+                        if "past" in station_now["predictors_data"][om_par_name] and (
+                            station_now["predictors_data"][om_par_name]["past"][
+                                self.time_depth
+                            ]
+                        ):
+                            metrics[par_name]["global"]["past"] = (
+                                self._get_self_metrics(
+                                    station_now["predictors_data"][om_par_name]["past"][
+                                        self.time_depth
+                                    ]
+                                )
+                            )
+
+                            metrics[par_name]["global"]["past"].update(
+                                self._get_mutual_metrics(
+                                    parameter["data"][self.time_depth],
+                                    station_now["predictors_data"][om_par_name]["past"][
+                                        self.time_depth
+                                    ],
+                                )
+                            )
+                        else:
+                            metrics[par_name]["global"]["past"] = {}
+
+                        if "future" in station_now["predictors_data"][om_par_name] and (
+                            station_now["predictors_data"][om_par_name]["future"][
+                                self.time_forecast
+                            ]
+                        ):
+                            metrics[par_name]["global"]["future"] = (
+                                self._get_self_metrics(
+                                    station_now["predictors_data"][om_par_name][
+                                        "future"
+                                    ][self.time_forecast]
+                                )
+                            )
+
+                            if (
+                                "data" in station_next["parameters"][par_name]
+                            ) and station_next["parameters"][par_name]["data"][
+                                self.time_depth
+                            ]:
+                                metrics[par_name]["global"]["future"].update(
+                                    self._get_mutual_metrics(
+                                        station_next["parameters"][par_name]["data"][
+                                            self.time_depth
+                                        ][obs_future_start:obs_future_end],
+                                        station_now["predictors_data"][om_par_name][
+                                            "future"
+                                        ][self.time_forecast],
+                                    )
+                                )
+                        else:
+                            metrics[par_name]["global"]["future"] = {}
+
+                    else:
+                        metrics[par_name]["global"]["past"] = {}
+                        metrics[par_name]["global"]["future"] = {}
+                else:
+                    metrics[par_name]["global"]["past"] = {}
+                    metrics[par_name]["global"]["future"] = {}
+            else:
+                metrics[par_name]["obs"] = {}
+                metrics[par_name]["local"]["past"] = {}
+                metrics[par_name]["local"]["future"] = {}
+                metrics[par_name]["global"]["past"] = {}
+                metrics[par_name]["global"]["future"] = {}
+
+        return metrics  # station
