@@ -10,6 +10,8 @@ from writer import Writer
 
 class Reporter:
     def __init__(self, args: dict, now_dates: list[datetime.date]):
+        self.args = args
+
         self.mode = args["main-args"]["mode"]
         self.case = args["main-args"]["case"]
 
@@ -28,8 +30,8 @@ class Reporter:
         # Словарь для хранения считанных данных
         self.in_data = {}
 
-        # Словарь для хранения наблюдений и оси времени сквозных для всей серии прогнозов
-        # self.in_obs = {"timeline": [], "obs": []}
+        # Словарь для хранения осей времени для каждого прогноза
+        self.timelines = {}
 
         # Формирование списка файлов для дальнейшего анализа результатов
         # Формат имен файлов:
@@ -58,21 +60,45 @@ class Reporter:
             with open(fname, "rb") as in_file:
                 self.in_data[str(now_date)] = pickle.load(in_file)
 
+            self.timelines[str(now_date)] = {
+                "past": self.in_data[str(now_date)]["stations"][0]["timeline"]["past"],
+                "future": self.in_data[str(now_date)]["stations"][0]["timeline"][
+                    "future"
+                ],
+            }
+
     def _get_metrics(self) -> dict[str, list]:
+        def find_now_date_with_obs_for_future(now_d: datetime.date) -> datetime.date:
+            dates = [
+                key
+                for key, val in self.timelines
+                if key >= now_d + datetime.timedelta(days=int(self.time_forecast[:-1]))
+            ]
+
+            for date_next in dates:
+                if (
+                    self.timelines[str(now_d)]["future"][self.time_forecast]
+                    in self.timelines[str(date_next)]["past"][self.time_depth]
+                ):
+                    return date_next
+
+            return None
+
         logging.info("Вычисление метрик")
 
         validator = Validator(self.time_depth, self.time_forecast)
 
         metrics = {}
 
-        for idx_now_date in range(len(self.now_dates[:-1])):
-            now_date_str = str(self.now_dates[idx_now_date])
-            now_date_next_str = str(self.now_dates[idx_now_date + 1])
+        for idx_now_date, now_date in enumerate(self.now_dates[:-1]):
+            now_date_str = str(now_date)
+
+            now_date_next_str = str(find_now_date_with_obs_for_future(now_date))
 
             stations_now = self.in_data[now_date_str]["stations"]
             stations_next = self.in_data[now_date_next_str]["stations"]
 
-            metrics[now_date_str] = []
+            metrics[now_date_str] = {}
 
             for idx_station, (station_now, station_next) in enumerate(
                 zip(stations_now, stations_next)
@@ -85,7 +111,7 @@ class Reporter:
                 )
 
                 st_metrics = validator.get_metrics(station_now, station_next)
-                metrics[now_date_str].append(st_metrics)
+                metrics[now_date_str][station_now["code"]] = st_metrics
 
         return metrics
 
@@ -97,7 +123,7 @@ class Reporter:
 
         metrics = self._get_metrics()
 
-        writer = Writer(args)
+        writer = Writer(self.args)
 
         writer.write_metrics(self.in_data, metrics)
 
