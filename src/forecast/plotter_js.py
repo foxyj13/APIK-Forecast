@@ -6,7 +6,7 @@ htmlfile_template = """
 <html>
 <meta charset="UTF-8" />
 <head>
-    <script src='../plotly-2.35.2.min.js'></script>
+    <script src='plotly-2.35.2.min.js'></script>
 </head>
 <font face='arial'>
 <center>
@@ -90,7 +90,9 @@ class PlotterJS:
 
     def make_plots(self, variables: list[str]):
         html_filename = (
-            self._config["html-plot-basename"] + f"_{self._config['name']}" + ".html"
+            self._config["html-plot-basename"]
+            + f"_{self._config['experiment-name']}"
+            + ".html"
         )
         html_filename = os.path.join(self._config["web-folder"], html_filename)
         with open(html_filename, "w", encoding="utf8") as htmlfile:
@@ -105,7 +107,8 @@ class PlotterJS:
                 bodies.append(body)
 
             htmlfile_text = htmlfile_template.replace(
-                "$$title$$", self._config["html-plot-title"]
+                "$$title$$",
+                f"{self._config['html-plot-title']} (exp.= {self._config['experiment-name']} td = {self._time_depth}; tf = {self._time_forecast})",
             )
             htmlfile_text = htmlfile_text.replace("$$body$$", "".join(bodies))
             htmlfile.write(htmlfile_text)
@@ -114,7 +117,7 @@ class PlotterJS:
         js_var_names = []
         js_filename = (
             self._config["js-plot-basename"]
-            + f"_{self._config['name']}"
+            + f"_{self._config['experiment-name']}"
             + f"_{variable}"
             + ".js"
         )

@@ -6,6 +6,7 @@ import logging
 import os
 import pickle
 import re
+import shutil
 import sys
 from copy import deepcopy
 from configparser import ConfigParser
@@ -283,6 +284,8 @@ def main():
 
     if not os.path.exists(main_config["web-folder"]):
         os.mkdir(main_config["web-folder"])
+    if not os.path.exists(os.path.join(main_config["web-folder"], "plotly-2.35.2.min.js")):
+        shutil.copy(os.path.join(str(os.path.dirname(__file__)), "plotly-2.35.2.min.js"), main_config["web-folder"])
 
     if not os.path.exists(main_config["ml-info-folder"]):
         os.mkdir(main_config["ml-info-folder"])
@@ -401,10 +404,11 @@ def main():
 
         logging.info("Считывание информации из %s", main_config["ml-config-file"])
         config_ml = ConfigParser()
-        config_ml.read(
-            os.path.join(str(os.path.dirname(__file__)), main_config["ml-config-file"]),
-            encoding="utf8",
-        )
+        # config_ml.read(
+        #     os.path.join(str(os.path.dirname(__file__)), main_config["ml-config-file"]),
+        #     encoding="utf8",
+        # )
+        config_ml.read(main_config["ml-config-file"], encoding="utf8")
         if not config_ml:
             logging.error(
                 "Не удалось прочитать файл %s. Проверьте формат и структуру файла",

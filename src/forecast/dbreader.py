@@ -566,9 +566,12 @@ class DBReader:
                 station["om_time_prepast"][time_depth].append(row_time)
 
                 for pred_name, pred_info in predictors.items():
-                    row_value = self._fix_value(
-                        row._mapping[pred_name], pred_info["no_value"]
-                    )
+                    if pred_name in row._fields:
+                        row_value = self._fix_value(
+                            row._mapping[pred_name], pred_info["no_value"]
+                        )
+                    else:
+                        row_value = None
 
                     if pred_name in station["om_parameters"]:
                         station["om_parameters"][pred_name]["prepast"][
@@ -588,9 +591,12 @@ class DBReader:
                 station["om_time_past"][time_depth].append(row_time)
 
                 for pred_name, pred_info in predictors.items():
-                    row_value = self._fix_value(
-                        row._mapping[pred_name], pred_info["no_value"]
-                    )
+                    if pred_name in row._fields:
+                        row_value = self._fix_value(
+                            row._mapping[pred_name], pred_info["no_value"]
+                        )
+                    else:
+                        row_value = None
 
                     if "past" in station["om_parameters"][pred_name]:
                         station["om_parameters"][pred_name]["past"][time_depth].append(
