@@ -459,15 +459,20 @@ class DBReader:
         )
 
         # now - time_depth - time_forecast
+        # utc_td_tf_before = (
+        #     utc_now - (int(time_depth[:-1]) + int(time_forecast[:-1])) * 24 * 60 * 60
+        # )
         utc_td_tf_before = (
-            utc_now - (int(time_depth[:-1]) + int(time_forecast[:-1])) * 24 * 60 * 60
+            utc_now
+            - (int(time_depth[:-1]) + int(time_forecast[:-1]) + 1) * 24 * 60 * 60
         )
         utc_td_tf_before_date = datetime.datetime.fromtimestamp(
             utc_td_tf_before, tz=datetime.timezone.utc
         )
 
         # now - time_forecast
-        utc_tf_before = utc_now - int(time_forecast[:-1]) * 24 * 60 * 60
+        # utc_tf_before = utc_now - int(time_forecast[:-1]) * 24 * 60 * 60
+        utc_tf_before = utc_now - (int(time_forecast[:-1]) + 1) * 24 * 60 * 60
         utc_tf_before_date = datetime.datetime.fromtimestamp(
             utc_tf_before, tz=datetime.timezone.utc
         )
@@ -631,9 +636,13 @@ class DBReader:
             station["om_time_past"]["recent"] = station["om_time_past"][time_depth][-1]
 
             station["om_time_future"] = {}
+            # station["om_time_future"][time_forecast] = [
+            #     station["om_time_past"]["recent"] + datetime.timedelta(hours=hh + 1)
+            #     for hh in range(int(time_forecast[:-1]) * 24)
+            # ]
             station["om_time_future"][time_forecast] = [
-                station["om_time_past"]["recent"] + datetime.timedelta(hours=hh + 1)
-                for hh in range(int(time_forecast[:-1]) * 24)
+                station["om_time_past"]["recent"] + datetime.timedelta(hours=(1 + hh))
+                for hh in range((int(time_forecast[:-1]) + 1) * 24)
             ]
             station["om_time_range_future"] = {}
             station["om_time_range_future"][time_forecast] = [

@@ -233,9 +233,11 @@ class OMReader:
             request_params_future["hourly"] = om_parameters_list
             # request_params_future["past_days"] = 0
             # request_params_future["forecast_days"] = int(time_forecast[:-1]) + 2
-            request_params_future["start_date"] = now_date + datetime.timedelta(hours=1)
+            request_params_future["start_date"] = (
+                now_date  # + datetime.timedelta(hours=1)
+            )
             request_params_future["end_date"] = now_date + datetime.timedelta(
-                days=int(time_forecast[:-1])
+                days=int(time_forecast[:-1]) + 1
             )
 
             try:
@@ -268,7 +270,9 @@ class OMReader:
 
             # Вырезать интервал, соответстующий заданному периоду
             try:
-                idx_start = om_time_future.index(station["db_time_past"]["recent"])
+                idx_start = om_time_future.index(
+                    station["db_time_past"]["recent"] + datetime.timedelta(hours=1)
+                )
             except ValueError:
                 logging.error(
                     "Ошибка получения начала интервала по времени для прогноза вперед!"
@@ -276,7 +280,7 @@ class OMReader:
                 return False, station
 
             date_future_end = station["db_time_past"]["recent"] + datetime.timedelta(
-                days=int(time_forecast[:-1])
+                days=int(time_forecast[:-1]) + 1
             )
             try:
                 idx_end = om_time_future.index(date_future_end)
