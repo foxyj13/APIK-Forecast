@@ -210,7 +210,7 @@ def get_station_info(
 
         st_par_info["data"] = {time_depth: par_info["data"][time_depth]}
 
-        st_info["parameters"]["models"] = ml_adj.get_station_par_models_info(
+        st_par_info["models"] = ml_adj.get_station_par_models_info(
             station["code"], par_name
         )
 
@@ -284,8 +284,13 @@ def main():
 
     if not os.path.exists(main_config["web-folder"]):
         os.mkdir(main_config["web-folder"])
-    if not os.path.exists(os.path.join(main_config["web-folder"], "plotly-2.35.2.min.js")):
-        shutil.copy(os.path.join(str(os.path.dirname(__file__)), "plotly-2.35.2.min.js"), main_config["web-folder"])
+    if not os.path.exists(
+        os.path.join(main_config["web-folder"], "plotly-2.35.2.min.js")
+    ):
+        shutil.copy(
+            os.path.join(str(os.path.dirname(__file__)), "plotly-2.35.2.min.js"),
+            main_config["web-folder"],
+        )
 
     if not os.path.exists(main_config["ml-info-folder"]):
         os.mkdir(main_config["ml-info-folder"])
