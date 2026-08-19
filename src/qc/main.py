@@ -164,11 +164,26 @@ def run_forecast(
     forecast_main_program: str, args: dict, now_date: datetime.date
 ) -> bool:
     try:
+        run_list = [
+            sys.executable,
+            forecast_main_program,
+            "--mode",
+            args["forecast-args"]["mode"],
+            "--add-globforecast-plot",
+            args["forecast-args"]["add-globforecast-plot"],
+            "--time-depth",
+            args["forecast-args"]["time-depth"],
+            "--time-forecast",
+            args["forecast-args"]["time-forecast"],
+            "--forecast-type",
+            args["forecast-args"]["forecast-type"],
+            "--now-date",
+            str(now_date),
+            "--config",
+            args["forecast-args"]["config"],
+        ]
         result = subprocess.run(
-            [
-                sys.executable,
-                f"{forecast_main_program} --mode={args['forecast-args']['mode']} --add-globforecast-plot={args['forecast-args']['add-globforecast-plot']} --time-depth={args['forecast-args']['time-depth']} --time-forecast={args['forecast-args']['time-forecast']} --forecast-type={args['forecast-args']['forecast-type']} --now-date={now_date} --config={args['forecast-args']['config']}",
-            ],
+            run_list,
             capture_output=True,  # Captures stdout and stderr
             text=True,  # Returns strings instead of bytes
             check=True,  # Throws CalledProcessError if the script fails
@@ -225,7 +240,12 @@ def main():
 
             # Последовательный запуск расчета прогнозов
             for now_date in now_dates:
+                logging.info("Расчет прогнозов от %s", str(now_date))
                 result = run_forecast(forecast_main_program, args, now_date)
+                if result:
+                    logging.info("Успешно")
+                else:
+                    logging.info("Прерван")
 
         elif args["main-args"]["case"] == "forecast_prepared":
             logging.info(
