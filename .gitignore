@@ -33,6 +33,7 @@ images_save/
 input/
 log/
 web/
+qc_reports/
 requirements_*.txt
 *.ipynb
 .cache.sqlite
