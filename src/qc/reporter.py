@@ -9,7 +9,7 @@ from writer import Writer
 
 
 class Reporter:
-    def __init__(self, args: dict, now_dates: list[datetime.date]):
+    def __init__(self, args: dict, now_dates_forec_obs: dict[str, str]):
         self.args = args
 
         self.mode = args["main-args"]["mode"]
@@ -25,7 +25,10 @@ class Reporter:
 
         self.output_folder = args["main-args"]["output-folder"]
 
-        self.now_dates = now_dates
+        self.now_dates_forec_obs = now_dates_forec_obs
+        self.now_dates = list(
+            set(now_dates_forec_obs.keys()) | set(now_dates_forec_obs.values())
+        )
 
         # Словарь для хранения считанных данных
         self.in_data = {}
@@ -39,7 +42,7 @@ class Reporter:
         self.in_files = [
             os.path.join(
                 self.data_folder,
-                f"apik-forecast_{self.exp_name}>_<forecast-type>_{str(now_date)}_td{self.time_depth}_tf{self.time_forecast}.pkl",
+                f"apik-forecast_{self.exp_name}_{self.forecast_type}_{str(now_date)}_td{self.time_depth}_tf{self.time_forecast}.pkl",
             )
             for now_date in self.now_dates
         ]
@@ -68,32 +71,14 @@ class Reporter:
             }
 
     def _get_metrics(self) -> dict[str, list]:
-        def find_now_date_with_obs_for_future(now_d: datetime.date) -> datetime.date:
-            dates = [
-                key
-                for key, val in self.timelines
-                if key >= now_d + datetime.timedelta(days=int(self.time_forecast[:-1]))
-            ]
-
-            for date_next in dates:
-                if (
-                    self.timelines[str(now_d)]["future"][self.time_forecast]
-                    in self.timelines[str(date_next)]["past"][self.time_depth]
-                ):
-                    return date_next
-
-            return None
-
         logging.info("Вычисление метрик")
 
         validator = Validator(self.time_depth, self.time_forecast)
 
         metrics = {}
 
-        for idx_now_date, now_date in enumerate(self.now_dates[:-1]):
-            now_date_str = str(now_date)
-
-            now_date_next_str = str(find_now_date_with_obs_for_future(now_date))
+        # for idx_now_date, now_date in enumerate(self.now_dates[:-1]):
+        for now_date_str, now_date_next_str in self.now_dates_forec_obs.items():
 
             stations_now = self.in_data[now_date_str]["stations"]
             stations_next = self.in_data[now_date_next_str]["stations"]
@@ -103,6 +88,15 @@ class Reporter:
             for idx_station, (station_now, station_next) in enumerate(
                 zip(stations_now, stations_next)
             ):
+                if station_now["code"] != station_next["code"]:
+                    logging.error(
+                        "Рассинхронизация порядка записи станций с кодами: %s и %s",
+                        station_now["code"],
+                        station_next["code"],
+                    )
+                    logging.info("Остановка программы")
+                    sys.exit(1)
+
                 logging.info(
                     "Дата старта прогноза [%s]: станция [%s] %s",
                     now_date_str,
@@ -115,8 +109,8 @@ class Reporter:
 
         return metrics
 
-    def _write_metrics(self, metrics: dict):
-        logging.info("Запись метрик в файлы")
+    # def _write_metrics(self, metrics: dict):
+    #     logging.info("Запись метрик в файлы")
 
     def _gen_metrics_files(self):
         logging.info("Генерация сводных xlsx-файлов с оценками")
@@ -127,17 +121,42 @@ class Reporter:
 
         writer.write_metrics(self.in_data, metrics)
 
-    def _gen_images(self):
-        logging.info("Генерация сводных рисунков с наблюдениями и прогнозами")
+    # def _gen_images(self):
+    #     logging.info("Генерация сводных рисунков с наблюдениями и прогнозами")
 
     def gen_qc_report(self):
+        def check_obs_avail_for_now_date_forecast() -> bool:
+            result = True
+
+            for now_date_str, now_date_next_str in self.now_dates_forec_obs.items():
+                if set(
+                    self.timelines[now_date_str]["future"][self.time_forecast]
+                ) < set(self.timelines[now_date_next_str]["past"][self.time_depth]):
+                    pass
+                else:
+                    logging.error(
+                        "Отсутствуют наблюдения для прогноза от %s в файле с прогнозом от %s",
+                        now_date_str,
+                        now_date_next_str,
+                    )
+                    result = False
+
+            return result
+
         logging.info("Генерация QC-отчета")
 
         # Загрузка данных из pkl-файлов
         self._load_data()
 
-        # Генерация сводных xlsx-файлов с оценками
-        self._gen_metrics_files()
+        # Проверка наличия наблюдений для прогнозов
+        if check_obs_avail_for_now_date_forecast():
 
-        # Генерация сводных рисунков с наблюдениями и прогнозами
-        self._gen_images()
+            # Генерация сводных xlsx-файлов с оценками
+            self._gen_metrics_files()
+
+            # Генерация сводных рисунков с наблюдениями и прогнозами
+            # self._gen_images()
+        else:
+            logging.info("Не для всех прогнозов наблюдения в наличии.")
+            logging.info("Остановка программы")
+            sys.exit(1)
