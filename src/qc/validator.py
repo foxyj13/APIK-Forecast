@@ -18,6 +18,7 @@ class Validator:
 
     @staticmethod
     def _get_self_metrics(data: list) -> dict:
+        # logging.info("self_metrics")
 
         data_nan = [
             (x is None) or (isinstance(x, float) and math.isnan(x)) for x in data
@@ -43,31 +44,93 @@ class Validator:
     @staticmethod
     def _get_mutual_metrics(data_obs: list, data_mod: list) -> dict:
 
-        def get_pearsonr(data_obs: list, data_mod: list) -> float:
+        # def get_pearsonr(data_obs: list, data_mod: list) -> float:
 
-            mean_obs = np.nanmean(data_obs)
-            mean_mod = np.nanmean(data_mod)
+        #     np_data_obs = np.asarray(data_obs)
+        #     np_data_mod = np.asarray(data_mod)
 
-            np_data_obs = np.asarray(data_obs)
-            np_data_mod = np.asarray(data_mod)
+        #     mask = ~np.isnan(np_data_obs) & ~np.isnan(np_data_mod)
+        #     matrix = np.corrcoef(np_data_obs[mask], np_data_mod[mask])
+        #     pearson_coef = matrix[0, 1]
 
-            top = np.nansum((np_data_obs - mean_obs) * (np_data_mod - mean_mod))
+        #     return pearson_coef
 
-            bot = (
-                np.nansum(np.power(np_data_obs - mean_obs, 2))
-                * np.nansum(np.power(np_data_mod - mean_mod, 2))
-            ) ** 0.5
+        def get_nse(data_obs: list, data_mod: list, eps=1e-7) -> float:
+            """Получение значения коэффициента эффективности Нэша-Сатклиффа (NSE)
 
-            return top / bot
+            Интерпретация значений:
+                NSE = 1: Идеальное совпадение модели с реальностью.
+                    Смоделированные данные полностью повторяют фактические.
+                0 < NSE < 1: Модель считается приемлемой. Чем ближе к 1, тем выше качество прогноза.
+                    Значения выше 0.5–0.6 в гидрологии обычно трактуются как удовлетворительные или хорошие.
+                NSE = 0: Прогнозы модели имеют точность на уровне простого среднего значения от исторических данных.
+                NSE < 0: Модель работает хуже, чем простое среднее арифметическое наблюдений.
+                    Моделирование в данном виде не имеет практического смысла.
+            """
 
-        def get_nse(data_obs: list, data_mod: list) -> float:
+            # logging.info("NSE")
+
             np_data_obs = np.asarray(data_obs)
             np_data_mod = np.asarray(data_mod)
 
             top = np.nansum(np.power(np_data_mod - np_data_obs, 2))
             bot = np.nansum(np.power(np_data_obs - np.nanmean(data_obs), 2))
 
+            if np.isclose(bot, 0.0, atol=eps):
+                if np.isclose(top, 0.0, atol=eps) == 0:
+                    return 1.0
+                else:
+                    return np.nan
+
             return 1 - top / bot
+
+        def get_kge(data_obs: list, data_mod: list, eps=1e-7) -> float:
+            """Получение значения коэффициента эффективности Клинга-Гупты (KGE)
+
+            Интерпретация значений:
+                KGE = 1: Идеальное совпадение модели с реальностью по всем трем параметрам.
+                KGE > 0: Модель считается относительно хорошей и применимой на практике.
+                KGE ≈ -0.41: Критическая отметка.
+                    При этом значении точность модели эквивалентна использованию константного среднего исторического значения.
+                KGE < -0.41: Качество модели крайне низкое; ее прогнозы хуже простого угадывания по среднему значению
+            """
+
+            # logging.info("KGE")
+
+            obs = np.asarray(data_obs)
+            sim = np.asarray(data_mod)
+
+            # 1. Расчет средних и стандартных отклонений
+            mu_obs = np.mean(obs)
+            mu_sim = np.mean(sim)
+            sigma_obs = np.std(obs)
+            sigma_sim = np.std(sim)
+
+            # 2. Безопасный расчет Beta
+            if np.isclose(mu_obs, 0.0, atol=eps):
+                beta = 1.0 if np.isclose(mu_sim, 0.0, atol=eps) else 1e5
+            else:
+                beta = mu_sim / mu_obs
+
+            # 3. Безопасный расчет Alpha и Корреляции (r)
+            if np.isclose(sigma_obs, 0.0, atol=eps):
+                alpha = 1.0 if np.isclose(sigma_sim, 0.0, atol=eps) else 1e5
+                r = 1.0 if np.isclose(mu_obs, mu_sim, atol=eps) else 0.0
+            else:
+                alpha = sigma_sim / sigma_obs
+                # Безопасный коэффициент Пирсона
+                if np.isclose(sigma_sim, 0.0, atol=eps):
+                    r = 0.0
+                else:
+                    r = np.corrcoef(obs, sim)[0, 1]
+                    if np.isnan(r):
+                        r = 0.0
+
+            # 4. Сборка KGE
+            kge = 1.0 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+            return float(kge)  # , {"r": r, "alpha": alpha, "beta": beta}
+
+        # logging.info("mutual_metrics")
 
         obs_nan = [
             (x is None) or (isinstance(x, float) and math.isnan(x)) for x in data_obs
@@ -80,13 +143,7 @@ class Validator:
             sum(mod_nan) / len(data_mod) < 0.1
         ):
             nse = get_nse(data_obs, data_mod)
-
-            pearsonr = get_pearsonr(data_obs, data_mod)
-            alpha = variation(data_mod, nan_policy="omit") / variation(
-                data_obs, nan_policy="omit"
-            )
-            betta = np.nanmean(data_mod) / np.nanmean(data_obs)
-            kge = 1 - ((pearsonr - 1) ** 2 + (betta - 1) ** 2 + (alpha - 1) ** 2) ** 0.5
+            kge = get_kge(data_obs, data_mod)
 
             idx_notnan = ~np.array(obs_nan) * ~np.array(mod_nan)
             data_obs_np = np.array(data_obs)[idx_notnan]
@@ -139,7 +196,12 @@ class Validator:
         metrics = {}
 
         for par_name, parameter in station_now["parameters"].items():
+            logging.info("[%s]", par_name)
+
             metrics[par_name] = {}
+            metrics[par_name]["local"] = {}
+            metrics[par_name]["global"] = {}
+
             # parameter["metrics"] = {}
 
             # Расчет метрик для наблюдений
@@ -149,9 +211,7 @@ class Validator:
                 )
 
                 # Расчет метрик для локального прогноза
-                metrics[par_name]["local"] = {}
                 if "data_local" in parameter:
-                    # Индивидуальные метрики
                     if ("past" in parameter["data_local"]) and (
                         parameter["data_local"]["past"][self.time_depth]
                     ):
@@ -184,7 +244,7 @@ class Validator:
                                 self._get_mutual_metrics(
                                     station_next["parameters"][par_name]["data"][
                                         self.time_depth
-                                    ][obs_future_start:obs_future_end],
+                                    ][obs_future_start : obs_future_end + 1],
                                     parameter["data_local"]["future"][
                                         self.time_forecast
                                     ],
@@ -202,7 +262,6 @@ class Validator:
                     om_par_name = parameter["om_parameter"]
 
                     if om_par_name in station_now["predictors_data"]:
-                        # Индивидуальные метрики
                         if "past" in station_now["predictors_data"][om_par_name] and (
                             station_now["predictors_data"][om_par_name]["past"][
                                 self.time_depth
@@ -249,7 +308,7 @@ class Validator:
                                     self._get_mutual_metrics(
                                         station_next["parameters"][par_name]["data"][
                                             self.time_depth
-                                        ][obs_future_start:obs_future_end],
+                                        ][obs_future_start : obs_future_end + 1],
                                         station_now["predictors_data"][om_par_name][
                                             "future"
                                         ][self.time_forecast],
