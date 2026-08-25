@@ -14,10 +14,15 @@ from logging.handlers import TimedRotatingFileHandler
 
 import openpyxl
 
+# Дополнение пути path для возможности подгрузки классов из модулей, расположенных в соседней директории share
+FOREC_MAIN_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARE_DIR = os.path.join(FOREC_MAIN_DIR, "..", "share")
+sys.path.insert(0, SHARE_DIR)
+
 from adjustmenter import Adjustmenter
 from dbreader import DBReader
 from omreader import OMReader
-from plotter import Plotter
+from plotter import Plotter  # из директрории share
 from plotter_js import PlotterJS
 
 
