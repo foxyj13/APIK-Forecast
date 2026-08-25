@@ -4,6 +4,7 @@ import logging
 import pickle
 import sys
 
+from plotter_qc import PlotterQC
 from validator import Validator
 from writer import Writer
 
@@ -14,6 +15,9 @@ class Reporter:
 
         self.mode = args["main-args"]["mode"]
         self.case = args["main-args"]["case"]
+        self.start_date = args["main-args"]["start-date"]
+        self.end_date = args["main-args"]["end-date"]
+        # self.step_date = args["main-args"]["step-date"]
 
         self.forecast_args = args["forecast-args"]
         self.time_depth = args["forecast-args"]["time-depth"]
@@ -121,8 +125,183 @@ class Reporter:
 
         writer.write_metrics(self.in_data, metrics)
 
-    # def _gen_images(self):
-    #     logging.info("Генерация сводных рисунков с наблюдениями и прогнозами")
+    def _combine_obs_forecasts(self) -> dict:
+        logging.info(
+            "Сведение данных наблюдений от разных прогнозов на одну ось по времени"
+        )
+
+        # { "stations": {
+        #   "code": {"full_name", "lat", "lon",
+        #       "parameters": {
+        #           <par_name>: {"code", "name", "om_parameter",
+        #                       "obs": {datetime: float, ...}, # использовать setdefault()
+        #                       "local": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
+        #                               "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}},
+        #                       "global": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
+        #                                "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}}
+        #           }
+        #       }
+        #   }, ...
+        # },
+        #  "obs_timeline": [datetime, ...] # сгенерирован нужный
+        # }
+
+        data_dict = {}
+        data_dict["stations"] = {}
+        start_time = (
+            datetime.datetime.strptime(self.start_date, "%Y-%m-%d")
+            - datetime.timedelta(days=int(self.time_depth[:-1]))
+            + datetime.timedelta(hours=1)
+        )
+        end_time = datetime.datetime.strptime(
+            self.end_date, "%Y-%m-%d"
+        ) + datetime.timedelta(days=int(self.time_forecast[:-1]) + 1)
+        hours_diff = ((end_time - start_time).days + 1) * 24
+
+        data_dict["obs_timeline"] = [
+            (start_time + datetime.timedelta(hours=dh)).replace(
+                tzinfo=datetime.timezone.utc
+            )
+            for dh in range(hours_diff)
+        ]
+
+        for now_date, now_date_info in self.in_data.items():
+            stations: list = now_date_info["stations"]
+            for station in stations:
+                st_code = station["code"]
+                if st_code not in data_dict["stations"]:
+                    data_dict["stations"][st_code] = {
+                        "full_name": station["full_name"],
+                        "lat": station["lat"],
+                        "lon": station["lon"],
+                        "parameters": {},
+                    }
+
+                for par_name, par_info in station["parameters"].items():
+                    if par_name not in data_dict["stations"][st_code]["parameters"]:
+                        data_dict["stations"][st_code]["parameters"][par_name] = {
+                            "code": par_info["code"],
+                            "full_name": par_info["full_name"],
+                            "om_parameter": par_info["om_parameter"],
+                            "obs": {},
+                            "local": {"past": {}, "future": {}},
+                            "global": {"past": {}, "future": {}},
+                        }
+
+                    for obs_time, obs_data in zip(
+                        station["timeline"]["past"][self.time_depth],
+                        par_info["data"][self.time_depth],
+                    ):
+                        if obs_time in data_dict["obs_timeline"]:
+                            data_dict["stations"][st_code]["parameters"][par_name][
+                                "obs"
+                            ].setdefault(obs_time, obs_data)
+
+                    if par_info["data_local"]:
+                        data_dict["stations"][st_code]["parameters"][par_name]["local"][
+                            "past"
+                        ][now_date] = {
+                            "data": par_info["data_local"]["past"][self.time_depth],
+                            "timeline": station["timeline"]["past"][self.time_depth],
+                        }
+
+                        data_dict["stations"][st_code]["parameters"][par_name]["local"][
+                            "future"
+                        ][now_date] = {
+                            "data": par_info["data_local"]["future"][
+                                self.time_forecast
+                            ],
+                            "timeline": station["timeline"]["future"][
+                                self.time_forecast
+                            ],
+                        }
+                    else:
+                        data_dict["stations"][st_code]["parameters"][par_name]["local"][
+                            "past"
+                        ][now_date] = {
+                            "data": [None]
+                            * len(station["timeline"]["past"][self.time_depth]),
+                            "timeline": station["timeline"]["past"][self.time_depth],
+                        }
+
+                        data_dict["stations"][st_code]["parameters"][par_name]["local"][
+                            "future"
+                        ][now_date] = {
+                            "data": [None]
+                            * len(station["timeline"]["past"][self.time_depth]),
+                            "timeline": station["timeline"]["future"][
+                                self.time_forecast
+                            ],
+                        }
+
+                    if par_info["om_parameter"] and (
+                        par_info["om_parameter"] in station["predictors_data"]
+                    ):
+                        data_dict["stations"][st_code]["parameters"][par_name][
+                            "global"
+                        ]["past"][now_date] = {
+                            "data": station["predictors_data"][
+                                par_info["om_parameter"]
+                            ]["past"][self.time_depth],
+                            "timeline": station["timeline"]["past"][self.time_depth],
+                        }
+
+                        data_dict["stations"][st_code]["parameters"][par_name][
+                            "global"
+                        ]["future"][now_date] = {
+                            "data": station["predictors_data"][
+                                par_info["om_parameter"]
+                            ]["future"][self.time_forecast],
+                            "timeline": station["timeline"]["future"][
+                                self.time_forecast
+                            ],
+                        }
+                    else:
+                        data_dict["stations"][st_code]["parameters"][par_name][
+                            "global"
+                        ]["past"][now_date] = {
+                            "data": [None]
+                            * len(station["timeline"]["past"][self.time_depth]),
+                            "timeline": station["timeline"]["past"][self.time_depth],
+                        }
+
+                        data_dict["stations"][st_code]["parameters"][par_name][
+                            "global"
+                        ]["future"][now_date] = {
+                            "data": [None]
+                            * len(station["timeline"]["past"][self.time_depth]),
+                            "timeline": station["timeline"]["future"][
+                                self.time_forecast
+                            ],
+                        }
+
+        # { "stations": {
+        #   "code": {"full_name", "lat", "lon",
+        #       "parameters": {
+        #           <par_name>: {"code", "name", "om_parameter",
+        #                       "obs": [float, ...],
+        #                       "local": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
+        #                               "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}},
+        #                       "global": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
+        #                                "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}}
+
+        #           }
+        #       }
+        #   }, ...
+        # },
+        #  "obs_timeline": [datetime, ...] # сгенерирован нужный
+        # }
+
+        for station, station_info in data_dict["stations"].items():
+            for par_name, par_info in station_info["parameters"].items():
+                obs_list = [
+                    par_info["obs"].get(time_val, None)
+                    for time_val in data_dict["obs_timeline"]
+                ]
+
+                par_info["obs"] = obs_list
+
+        return data_dict
 
     def gen_qc_report(self):
         def check_obs_avail_for_now_date_forecast() -> bool:
@@ -152,10 +331,21 @@ class Reporter:
         if check_obs_avail_for_now_date_forecast():
 
             # Генерация сводных xlsx-файлов с оценками
-            self._gen_metrics_files()
+            # self._gen_metrics_files()
 
             # Генерация сводных рисунков с наблюдениями и прогнозами
             # self._gen_images()
+            data_obs_forec = self._combine_obs_forecasts()
+
+            plotter_qc = PlotterQC(
+                self.args,
+                # self.now_dates_forec_obs,
+                data_obs_forec,
+                # self.in_data,
+                # self.timelines,
+            )
+            plotter_qc.make_plots()
+
         else:
             logging.info("Не для всех прогнозов наблюдения в наличии.")
             logging.info("Остановка программы")
