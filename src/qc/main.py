@@ -10,6 +10,11 @@ from logging.handlers import TimedRotatingFileHandler
 
 from joblib import Parallel, delayed
 
+# Дополнение пути path для возможности подгрузки классов из модулей, расположенных в соседней директории share
+FOREC_MAIN_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARE_DIR = os.path.join(FOREC_MAIN_DIR, "..", "share")
+sys.path.insert(0, SHARE_DIR)
+
 from reporter import Reporter
 
 
@@ -169,7 +174,7 @@ def init() -> dict:
     }
 
 
-def run_forecast(forecast_main_program: str, args: dict, now_date_str: str) -> bool:
+def run_forecast(forecast_main_program: str, args: dict, now_date_str: str):
 
     logging.info("Расчет прогнозов от %s", now_date_str)
 
