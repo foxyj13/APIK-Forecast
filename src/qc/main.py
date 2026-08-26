@@ -66,6 +66,14 @@ def init() -> dict:
 
         return True
 
+    def check_plot_mode(plot_mode: str) -> bool:
+        cases = ["color", "grad", "bw"]
+
+        if plot_mode not in cases:
+            return False
+
+        return True
+
     parser = argparse.ArgumentParser(
         description="Observations-forecasts exporter and QC-report generator"
     )
@@ -127,13 +135,13 @@ def init() -> dict:
             )
             return {}
 
-        if int(main_args["step-date"][:-1]) > int(forecast_args["time-depth"][:-1]):
-            logging.warning(
-                "Шаг расчета QC-отчета (step-date = %s) превышает период обучения (time-depth = %s): значение step-date будет заменено на time-depth",
-                main_args["step-date"],
-                forecast_args["time-depth"],
-            )
-            main_args["step-date"] = forecast_args["time-depth"]
+        # if int(main_args["step-date"][:-1]) > int(forecast_args["time-depth"][:-1]):
+        #     logging.warning(
+        #         "Шаг расчета QC-отчета (step-date = %s) превышает период обучения (time-depth = %s): значение step-date будет заменено на time-depth",
+        #         main_args["step-date"],
+        #         forecast_args["time-depth"],
+        #     )
+        #     main_args["step-date"] = forecast_args["time-depth"]
 
     elif main_args["mode"] == "export":
         ...
@@ -152,6 +160,16 @@ def init() -> dict:
             "Указан неверный тип прогноза: %s", forecast_args["forecast-type"]
         )
         return {}
+
+    if not check_plot_mode(main_args["plot-mode"]):
+        logging.error(
+            "Указан неверный цветовой режим отрисовки графиков в QC-отчете: %s",
+            main_args["plot-mode"],
+        )
+        logging.info(
+            "Будет использован режим отрисовки по умолчанию (color). Допустимые значения: bw, color, grad"
+        )
+        main_args["plot-mode"] = "color"
 
     if (
         main_args["mode"] == "qc" and main_args["case"] == "forecast_prepared"
