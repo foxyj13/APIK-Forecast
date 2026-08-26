@@ -3,6 +3,7 @@ import os
 
 from openpyxl import load_workbook
 from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 import pandas as pd
 
 FT_BOLD = Font(bold=True)
@@ -57,6 +58,101 @@ class Writer:
             "loc_tf" + self.time_forecast,
             "glob_tf" + self.time_forecast,
         ]
+
+    def _collect_info(self, in_data_0: dict) -> dict:
+        logging.info(
+            "Сбор информации о расчетах для формирования 1-го листа с аннотацией"
+        )
+
+        info = {}
+
+        for idx_station, station in enumerate(in_data_0["stations"]):
+            st_code = station["code"]
+            info[st_code] = {}
+            info[st_code]["station"] = {
+                "full_name": station["full_name"],
+                "lat": station["lat"],
+                "lon": station["lon"],
+            }
+
+            info[st_code]["parameters"] = {}
+            for idx_par, par_name in enumerate(station["parameters"]):
+                info[st_code]["parameters"][par_name] = {
+                    "code": station["parameters"][par_name]["code"],
+                    "name": station["parameters"][par_name]["name"],
+                    "min": station["parameters"][par_name]["min_value"],
+                    "max": station["parameters"][par_name]["max_value"],
+                }
+
+                if "prepast" in station["timeline"] and station["timeline"]["prepast"]:
+                    #  DB
+                    info[st_code]["parameters"][par_name]["data-source"] = "db"
+                    info[st_code]["parameters"][par_name]["predictors"] = station[
+                        "parameters"
+                    ][par_name]["db_predictors"]
+                    info[st_code]["parameters"][par_name]["om_parameter"] = None
+                else:
+                    # OM
+                    info[st_code]["parameters"][par_name]["data-source"] = "om"
+                    info[st_code]["parameters"][par_name]["predictors"] = station[
+                        "parameters"
+                    ][par_name]["om_predictors"]
+                    info[st_code]["parameters"][par_name]["om_parameter"] = station[
+                        "parameters"
+                    ][par_name]["om_parameter"]
+
+                info[st_code]["parameters"][par_name]["ml_models"] = []
+                for model in station["parameters"][par_name]["models"]:
+                    model_cfg_pars = station["parameters"][par_name]["models"][model][
+                        "model_cfg"
+                    ]["cfg_pars"]
+                    model_cfg_type = station["parameters"][par_name]["models"][model][
+                        "model_cfg"
+                    ]["cfg_type"]
+                    info[st_code]["parameters"][par_name]["ml_models"].append(
+                        f"{model}({model_cfg_pars})[{model_cfg_type}]"
+                    )
+
+        info["config"] = {
+            "mode": in_data_0["args"]["mode"],
+            "forecast-type": in_data_0["args"]["forecast_type"],
+            "time-depth": in_data_0["args"]["time_depth"],
+            "time-forecast": in_data_0["args"]["time_forecast"],
+        }
+        if (
+            "prepast" in in_data_0["stations"][0]["timeline"]
+            and in_data_0["stations"][0]["timeline"]["prepast"]
+        ):
+            info["config"]["om_model"] = None
+        else:
+            info["config"]["om_model"] = in_data_0["config_ini"]["om"]["model"]
+
+        return info
+
+    def _collect_ml_models_info(self, in_data: dict, now_dates: list) -> dict:
+        logging.info(
+            "Формирование датафреймов с перечнем и характеристиками ML-моделей для записи в файлы"
+        )
+
+        dict_ml_models = {}
+
+        for now_date in now_dates:
+            dict_ml_models[now_date] = {}
+            for station in in_data[now_date]["stations"]:
+                station_code = station["code"]
+                if station_code not in dict_ml_models[now_date]:
+                    dict_ml_models[now_date][station_code] = {}
+                for par_name, par_info in station["parameters"].items():
+                    if par_name not in dict_ml_models[now_date][station_code]:
+                        dict_ml_models[now_date][station_code][par_name] = {}
+                    dict_ml_models[now_date][station_code][par_name] = "; ".join(
+                        [
+                            f"{model_name}({model_info['model_cfg']['cfg_pars']})[{model_info['model_cfg']['cfg_type']}]"
+                            for model_name, model_info in par_info["models"].items()
+                        ]
+                    )
+
+        return dict_ml_models
 
     def _gen_dfs_metrics(self, metrics: dict) -> dict:
 
@@ -232,79 +328,9 @@ class Writer:
 
         return dfs
 
-    def _collect_info(self, in_data_0: dict) -> dict:
+    def _write_info_sheet_to_station_file(self, wb, info, st_code):
         logging.info(
-            "Сбор информации о расчетах для формирования 1-го листа с аннотацией"
-        )
-
-        info = {}
-
-        for idx_station, station in enumerate(in_data_0["stations"]):
-            st_code = station["code"]
-            info[st_code] = {}
-            info[st_code]["station"] = {
-                "full_name": station["full_name"],
-                "lat": station["lat"],
-                "lon": station["lon"],
-            }
-
-            info[st_code]["parameters"] = {}
-            for idx_par, par_name in enumerate(station["parameters"]):
-                info[st_code]["parameters"][par_name] = {
-                    "code": station["parameters"][par_name]["code"],
-                    "name": station["parameters"][par_name]["name"],
-                    "min": station["parameters"][par_name]["min_value"],
-                    "max": station["parameters"][par_name]["max_value"],
-                }
-
-                if "prepast" in station["timeline"] and station["timeline"]["prepast"]:
-                    #  DB
-                    info[st_code]["parameters"][par_name]["data-source"] = "db"
-                    info[st_code]["parameters"][par_name]["predictors"] = station[
-                        "parameters"
-                    ][par_name]["db_predictors"]
-                    info[st_code]["parameters"][par_name]["om_parameter"] = None
-                else:
-                    # OM
-                    info[st_code]["parameters"][par_name]["data-source"] = "om"
-                    info[st_code]["parameters"][par_name]["predictors"] = station[
-                        "parameters"
-                    ][par_name]["om_predictors"]
-                    info[st_code]["parameters"][par_name]["om_parameter"] = station[
-                        "parameters"
-                    ][par_name]["om_parameter"]
-
-                info[st_code]["parameters"][par_name]["ml_models"] = []
-                for model in station["parameters"][par_name]["models"]:
-                    model_cfg_pars = station["parameters"][par_name]["models"][model][
-                        "model_cfg"
-                    ]["cfg_pars"]
-                    model_cfg_type = station["parameters"][par_name]["models"][model][
-                        "model_cfg"
-                    ]["cfg_type"]
-                    info[st_code]["parameters"][par_name]["ml_models"].append(
-                        f"{model}({model_cfg_pars})[{model_cfg_type}]"
-                    )
-
-        info["config"] = {
-            "mode": in_data_0["args"]["mode"],
-            "forecast-type": in_data_0["args"]["forecast_type"],
-            "time-depth": in_data_0["args"]["time_depth"],
-            "time-forecast": in_data_0["args"]["time_forecast"],
-        }
-        if (
-            "prepast" in in_data_0["stations"][0]["timeline"]
-            and in_data_0["stations"][0]["timeline"]["prepast"]
-        ):
-            info["config"]["om_model"] = None
-        else:
-            info["config"]["om_model"] = in_data_0["config_ini"]["om"]["model"]
-
-        return info
-
-    def write_info_sheet_to_station_file(self, wb, info, st_code):
-        logging.info(
-            "Запись информации о расчетах в 1-й лист файла с метриками для станции"
+            "Запись информации о расчетах в файл с метриками для станции %s", st_code
         )
 
         ws = wb.create_sheet(title="Info", index=0)
@@ -316,8 +342,8 @@ class Writer:
         ws.column_dimensions["E"].width = COL_WIDHT
         ws.column_dimensions["F"].width = COL_WIDHT_2X
         ws.column_dimensions["G"].width = COL_WIDHT_2X
-        ws.column_dimensions["H"].width = COL_WIDHT
-        ws.column_dimensions["I"].width = COL_WIDHT
+        # ws.column_dimensions["H"].width = COL_WIDHT
+        # ws.column_dimensions["I"].width = COL_WIDHT
 
         ws["A1"] = "QC-отчет для периода:"
         ws["A1"].font = FT_BOLD_BLUE
@@ -360,8 +386,8 @@ class Writer:
             ws["E10"],
             ws["F10"],
             ws["G10"],
-            ws["H10"],
-            ws["I10"],
+            # ws["H10"],
+            # ws["I10"],
         ) = (
             "Код",
             "Суффикс",
@@ -370,8 +396,8 @@ class Writer:
             "Максимум",
             "Предикторы",
             "ОМ-соответствие",
-            "Кол-во ML-моделей",
-            "Список ML-моделей (<конфигурация>)[тип конфигурации]",
+            # "Кол-во ML-моделей",
+            # "Список ML-моделей (<конфигурация>)[тип конфигурации]",
         )
         (
             ws["A10"].font,
@@ -381,8 +407,8 @@ class Writer:
             ws["E10"].font,
             ws["F10"].font,
             ws["G10"].font,
-            ws["H10"].font,
-            ws["I10"].font,
+            # ws["H10"].font,
+            # ws["I10"].font,
         ) = (
             FT_BOLD,
             FT_BOLD,
@@ -391,8 +417,8 @@ class Writer:
             FT_BOLD,
             FT_BOLD,
             FT_BOLD,
-            FT_BOLD,
-            FT_BOLD,
+            # FT_BOLD,
+            # FT_BOLD,
         )
 
         irow = 11
@@ -404,8 +430,8 @@ class Writer:
             ws.cell(column=5, row=irow).value = parameter["max"]  # E
             ws.cell(column=6, row=irow).value = "; ".join(parameter["predictors"])  # F
             ws.cell(column=7, row=irow).value = parameter["om_parameter"]  # G
-            ws.cell(column=8, row=irow).value = len(parameter["ml_models"])  # H
-            ws.cell(column=9, row=irow).value = "; ".join(parameter["ml_models"])  # I
+            # ws.cell(column=8, row=irow).value = len(parameter["ml_models"])  # H
+            # ws.cell(column=9, row=irow).value = "; ".join(parameter["ml_models"])  # I
 
             irow = irow + 1
 
@@ -560,9 +586,9 @@ class Writer:
             "Глобальный прогноз вперед от текущей даты из <Y> дней (time-forecast=<Y>d)",
         )
 
-    def write_info_sheet_to_parameter_file(self, wb, info, par_name):
+    def _write_info_sheet_to_parameter_file(self, wb, info, par_name):
         logging.info(
-            "Запись информации о расчетах в 1-й лист файла с метриками для параметра"
+            "Запись информации о расчетах в файл с метриками для параметра %s", par_name
         )
 
         ws = wb.create_sheet(title="Info", index=0)
@@ -574,8 +600,8 @@ class Writer:
         ws.column_dimensions["E"].width = COL_WIDHT
         ws.column_dimensions["F"].width = COL_WIDHT_2X
         ws.column_dimensions["G"].width = COL_WIDHT_2X
-        ws.column_dimensions["H"].width = COL_WIDHT
-        ws.column_dimensions["I"].width = COL_WIDHT
+        # ws.column_dimensions["H"].width = COL_WIDHT
+        # ws.column_dimensions["I"].width = COL_WIDHT
 
         ws["A1"] = "QC-отчет для периода:"
         ws["A1"].font = FT_BOLD_BLUE
@@ -600,8 +626,8 @@ class Writer:
             ws["E6"],
             ws["F6"],
             ws["G6"],
-            ws["H6"],
-            ws["I6"],
+            # ws["H6"],
+            # ws["I6"],
         ) = (
             "Коды",
             "Суффикс",
@@ -610,8 +636,8 @@ class Writer:
             "Максимум",
             "Предикторы",
             "ОМ-соответствие",
-            "Кол-во ML-моделей",
-            "Список ML-моделей (<конфигурация>)[тип конфигурации]",
+            # "Кол-во ML-моделей",
+            # "Список ML-моделей (<конфигурация>)[тип конфигурации]",
         )
         (
             ws["A6"].font,
@@ -621,8 +647,8 @@ class Writer:
             ws["E6"].font,
             ws["F6"].font,
             ws["G6"].font,
-            ws["H6"].font,
-            ws["I6"].font,
+            # ws["H6"].font,
+            # ws["I6"].font,
         ) = (
             FT_BOLD,
             FT_BOLD,
@@ -631,8 +657,8 @@ class Writer:
             FT_BOLD,
             FT_BOLD,
             FT_BOLD,
-            FT_BOLD,
-            FT_BOLD,
+            # FT_BOLD,
+            # FT_BOLD,
         )
         # Строка 7: заполняется ниже
 
@@ -654,11 +680,13 @@ class Writer:
 
         irow = 11
         par_codes = set()
+        # par_models = set()
         for st_code, station in info.items():
             if st_code != "config":
                 if par_name in station["parameters"]:
                     any_st_code = st_code
                     par_codes.add(station["parameters"][par_name]["code"])
+                    # par_models.add(station["parameters"][par_name]["ml_models"])
 
                     ws.cell(column=1, row=irow).value = st_code  # A
                     ws.cell(column=2, row=irow).value = station["station"][
@@ -677,8 +705,8 @@ class Writer:
             ws["E7"],
             ws["F7"],
             ws["G7"],
-            ws["H7"],
-            ws["I7"],
+            # ws["H7"],
+            # ws["I7"],
         ) = (
             "; ".join(list(par_codes)),
             par_name,
@@ -687,8 +715,8 @@ class Writer:
             info[any_st_code]["parameters"][par_name]["max"],
             "; ".join(info[any_st_code]["parameters"][par_name]["predictors"]),
             info[any_st_code]["parameters"][par_name]["om_parameter"],
-            len(info[any_st_code]["parameters"][par_name]["ml_models"]),
-            "; ".join(info[any_st_code]["parameters"][par_name]["ml_models"]),
+            # len(info[any_st_code]["parameters"][par_name]["ml_models"]),
+            # "; ".join(list(par_models)),
         )
 
         irow = irow + 1
@@ -842,7 +870,63 @@ class Writer:
             "Глобальный прогноз вперед от текущей даты из <Y> дней (time-forecast=<Y>d)",
         )
 
-    def write_1_file_is_1_station_all_parameters(self, info: dict, dfs: dict) -> None:
+    def _write_ml_models_sheet_to_station_file(self, wb, dict_ml_models, st_code):
+        logging.info(
+            "Запись информации о ML-моделях в файл с метриками для станции %s",
+            st_code,
+        )
+
+        ws = wb.create_sheet(title="ML-models", index=0)
+
+        now_dates = sorted(list(dict_ml_models.keys()))
+
+        columns = sorted(
+            [par_name for par_name in dict_ml_models[now_dates[0]][st_code].keys()]
+        )
+        for idx, col_name in enumerate(columns):
+            ws.cell(row=1, column=idx + 2).value = col_name
+            ws.cell(row=1, column=idx + 2).font = FT_BOLD
+
+        for idx in range(len(columns) + 1):
+            ws.column_dimensions[get_column_letter(idx + 1)].width = COL_WIDHT_2X
+
+        for idx_row, now_date in enumerate(now_dates):
+            ws.cell(row=idx_row + 2, column=1).value = now_date
+            for idx_col, par_name in enumerate(columns):
+                ws.cell(row=idx_row + 2, column=idx_col + 2).value = dict_ml_models[
+                    now_date
+                ][st_code][par_name]
+
+    def _write_ml_models_sheet_to_parameter_file(self, wb, dict_ml_models, par_name):
+        logging.info(
+            "Запись информации о ML-моделях в файл с метриками для параметра %s",
+            par_name,
+        )
+
+        ws = wb.create_sheet(title="ML-models", index=0)
+
+        now_dates = sorted(list(dict_ml_models.keys()))
+
+        columns = sorted([st_code for st_code in dict_ml_models[now_dates[0]].keys()])
+
+        for idx, col_name in enumerate(columns):
+            ws.cell(row=1, column=idx + 2).value = col_name
+            ws.cell(row=1, column=idx + 2).font = FT_BOLD
+
+        for idx in range(len(columns) + 1):
+            ws.column_dimensions[get_column_letter(idx + 1)].width = COL_WIDHT_2X
+
+        for idx_row, now_date in enumerate(now_dates):
+            ws.cell(row=idx_row + 2, column=1).value = now_date
+            for idx_col, st_code in enumerate(columns):
+                if par_name in dict_ml_models[now_date][st_code]:
+                    ws.cell(row=idx_row + 2, column=idx_col + 2).value = dict_ml_models[
+                        now_date
+                    ][st_code][par_name]
+
+    def write_1_file_is_1_station_all_parameters(
+        self, info: dict, dfs: dict, dict_ml_models: dict
+    ) -> None:
         logging.info(
             "Формирование серии файлов: 1 файл = 1 станция с метриками по всем метео-параметрам"
         )
@@ -864,12 +948,19 @@ class Writer:
             #  Открыть файл для дозаписи листа Info
             wb = load_workbook(out_file)
 
-            #   Сформировать 1-й лист (Info), на основе словаря info (для записи используется openpyxl)
-            self.write_info_sheet_to_station_file(wb, info, station_code)
+            # Сформировать 1-й лист (ML-models), на основе словаря dict_ml_models (для записи используется openpyxl)
+            self._write_ml_models_sheet_to_station_file(
+                wb, dict_ml_models, station_code
+            )
+
+            # Сформировать 1-й лист (Info), на основе словаря info (для записи используется openpyxl)
+            self._write_info_sheet_to_station_file(wb, info, station_code)
 
             wb.save(out_file)
 
-    def write_1_file_is_1_parameter_all_stations(self, info: dict, dfs: dict) -> None:
+    def write_1_file_is_1_parameter_all_stations(
+        self, info: dict, dfs: dict, dict_ml_models: dict
+    ) -> None:
         logging.info(
             "Формирование серии файлов: 1 файл = 1 метео-параметр (по имени) с метриками по станциям"
         )
@@ -901,8 +992,11 @@ class Writer:
             #  Открыть файл для дозаписи листа Info
             wb = load_workbook(out_file)
 
+            # Сформировать 1-й лист (ML-models), на основе словаря dict_ml_models (для записи используется openpyxl)
+            self._write_ml_models_sheet_to_parameter_file(wb, dict_ml_models, par_name)
+
             #   Сформировать 1-й лист (Info), на основе словаря info (для записи используется openpyxl)
-            self.write_info_sheet_to_parameter_file(wb, info, par_name)
+            self._write_info_sheet_to_parameter_file(wb, info, par_name)
 
             wb.save(out_file)
 
@@ -910,7 +1004,8 @@ class Writer:
         logging.info("Запись вычисленных метрик в файлы")
 
         info = self._collect_info(in_data[list(in_data.keys())[0]])
-        dfs = self._gen_dfs_metrics(metrics)
+        dfs_metrics = self._gen_dfs_metrics(metrics)
+        dict_ml_models = self._collect_ml_models_info(in_data, list(metrics.keys()))
 
-        self.write_1_file_is_1_station_all_parameters(info, dfs)
-        self.write_1_file_is_1_parameter_all_stations(info, dfs)
+        self.write_1_file_is_1_station_all_parameters(info, dfs_metrics, dict_ml_models)
+        self.write_1_file_is_1_parameter_all_stations(info, dfs_metrics, dict_ml_models)
