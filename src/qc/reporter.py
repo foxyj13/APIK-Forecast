@@ -52,15 +52,19 @@ class Reporter:
         ]
 
         # Проверка, что все фалы из сгенерированного списка присутствуют в указанной директории с данными
+        flag = True
         for fname in self.in_files:
             if not os.path.exists(fname):
-                logging.error(
-                    "Файл %s не существует. Формирование QC-отчета невозможно", fname
-                )
-                logging.info("Остановка программы")
-                sys.exit(1)
+                logging.error("Файл %s не существует", fname)
+                flag = False
+
+        if not flag:
+            logging.error("Недостаточно файлов для работы")
+            logging.info("Остановка программы")
+            sys.exit(1)
 
     def _combine_obs_forecasts(self) -> dict:
+        logging.info("Агрегация данных для дальнейшей отрисовки или экспорта")
         logging.info(
             "Сведение данных наблюдений от разных прогнозов на одну ось по времени"
         )
@@ -277,16 +281,7 @@ class Reporter:
 
         return metrics
 
-    def _gen_metrics_files(self):
-        logging.info("Генерация сводных xlsx-файлов с оценками")
-
-        metrics = self._get_metrics()
-
-        writer = Writer(self.args)
-
-        writer.write_metrics(self.in_data, metrics)
-
-    def _load_data(self):
+    def _load_data(self) -> None:
         logging.info("Загрузка данных из pkl-файлов")
 
         for now_date, fname in zip(self.now_dates, self.in_files):
@@ -300,7 +295,7 @@ class Reporter:
                 ],
             }
 
-    def gen_qc_report(self):
+    def gen_qc_report(self) -> None:
         def check_obs_avail_for_now_date_forecast() -> bool:
             result = True
 
@@ -328,11 +323,15 @@ class Reporter:
         if check_obs_avail_for_now_date_forecast():
 
             # Генерация сводных xlsx-файлов с оценками
-            self._gen_metrics_files()
+            logging.info("Генерация сводных xlsx-файлов с оценками")
+            metrics = self._get_metrics()
+            writer = Writer(self.args)
+            writer.write_metrics(self.in_data, metrics)
 
-            # Генерация сводных рисунков с наблюдениями и прогнозами
+            # Агрегация данных для дальнейшей отрисовки или экспорта
             data_obs_forec = self._combine_obs_forecasts()
 
+            # Генерация сводных рисунков с наблюдениями и прогнозами
             plotter_qc = PlotterQC(self.args, self.now_dates_forec_obs, data_obs_forec)
             plotter_qc.make_plots()
 
@@ -340,3 +339,19 @@ class Reporter:
             logging.info("Не для всех прогнозов наблюдения в наличии.")
             logging.info("Остановка программы")
             sys.exit(1)
+
+    def export_data(self):
+        logging.info("Экспорт данных")
+
+        # Загрузка данных из pkl-файлов
+        self._load_data()
+
+        # Агрегация данных для дальнейшей отрисовки или экспорта
+        data_obs_forec = self._combine_obs_forecasts()
+
+        # Генерация сводных xlsx-файлов с данными
+        logging.info("Генерация сводных xlsx-файлов с данными")
+        writer = Writer(self.args)
+        writer.write_data(
+            self.in_data, data_obs_forec, list(self.now_dates_forec_obs.keys())
+        )

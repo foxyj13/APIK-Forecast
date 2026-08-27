@@ -26,8 +26,25 @@ class Writer:
 
         self.exp_name = args["data-args"]["experiment-name"]
 
-        self.qc_filename_prefix = (
+        self.metrics_filename_prefix = (
             "apik-forecast_metrics_"
+            + self.exp_name
+            + "_"
+            + self.start_date_str
+            + "_"
+            + self.end_date_str
+            + "_step"
+            + self.step_date_str
+            + "_"
+            + self.forecast_type
+            + "_td"
+            + self.time_depth
+            + "_tf"
+            + self.time_forecast
+        )
+
+        self.data_filename_prefix = (
+            "apik-forecast_data_"
             + self.exp_name
             + "_"
             + self.start_date_str
@@ -153,6 +170,92 @@ class Writer:
                     )
 
         return dict_ml_models
+
+    # exp_data =
+    # { "stations": {
+    #   "code": {"full_name", "lat", "lon",
+    #       "parameters": {
+    #           <par_name>: {"code", "full_name", "om_parameter",
+    #                       "obs": [float, ...],
+    #                       "local": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
+    #                               "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}},
+    #                       "global": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
+    #                                "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}}
+
+    #           }
+    #       }
+    #   }, ...
+    # },
+    #  "obs_timeline": [datetime, ...] # сгенерирован нужный
+    # }
+    def _gen_dfs_data(self, exp_data: dict, now_dates: list) -> dict:
+        logging.info(
+            "Формирование датафреймов с данными: 1 датафрейм = 1 станция 1 метео-параметр"
+        )
+        col_names = now_dates
+        col_subnames = [
+            "loc_td" + self.time_depth,
+            "loc_tf" + self.time_forecast,
+            "glob_td" + self.time_depth,
+            "glob_tf" + self.time_forecast,
+        ]
+        columns = pd.MultiIndex.from_tuples(
+            [("obs", "obs")]
+            + [(col, subcol) for col in col_names for subcol in col_subnames]
+        )
+
+        indeces = [
+            str(tl_date.replace(tzinfo=None)) for tl_date in exp_data["obs_timeline"]
+        ]
+
+        dfs = {}
+
+        for station_code, station_data in exp_data["stations"].items():
+            dfs[station_code] = {}
+            for par_name, par_data in station_data["parameters"].items():
+                dfs_st_par = pd.DataFrame(columns=columns, index=indeces)
+
+                # Заполнение датафрейма
+                dfs_st_par.loc[indeces, ("obs", "obs")] = par_data["obs"]
+
+                for now_date in now_dates:
+                    idxs = [
+                        str(tl_date.replace(tzinfo=None))
+                        for tl_date in par_data["local"]["past"][now_date]["timeline"]
+                    ]
+                    dfs_st_par.loc[idxs, (now_date, col_subnames[0])] = par_data[
+                        "local"
+                    ]["past"][now_date]["data"]
+
+                    idxs = [
+                        str(tl_date.replace(tzinfo=None))
+                        for tl_date in par_data["local"]["future"][now_date]["timeline"]
+                    ]
+                    dfs_st_par.loc[idxs, (now_date, col_subnames[1])] = par_data[
+                        "local"
+                    ]["future"][now_date]["data"]
+
+                    idxs = [
+                        str(tl_date.replace(tzinfo=None))
+                        for tl_date in par_data["global"]["past"][now_date]["timeline"]
+                    ]
+                    dfs_st_par.loc[idxs, (now_date, col_subnames[2])] = par_data[
+                        "global"
+                    ]["past"][now_date]["data"]
+
+                    idxs = [
+                        str(tl_date.replace(tzinfo=None))
+                        for tl_date in par_data["global"]["future"][now_date][
+                            "timeline"
+                        ]
+                    ]
+                    dfs_st_par.loc[idxs, (now_date, col_subnames[3])] = par_data[
+                        "global"
+                    ]["future"][now_date]["data"]
+
+                dfs[station_code][par_name] = dfs_st_par
+
+        return dfs
 
     def _gen_dfs_metrics(self, metrics: dict) -> dict:
 
@@ -924,8 +1027,8 @@ class Writer:
                         now_date
                     ][st_code][par_name]
 
-    def write_1_file_is_1_station_all_parameters(
-        self, info: dict, dfs: dict, dict_ml_models: dict
+    def _write_1_file_is_1_station_all_parameters(
+        self, fname_prefix: str, info: dict, dfs: dict, dict_ml_models: dict
     ) -> None:
         logging.info(
             "Формирование серии файлов: 1 файл = 1 станция с метриками по всем метео-параметрам"
@@ -933,7 +1036,7 @@ class Writer:
 
         # Цикл по станциям:
         for station_code in dfs.keys():
-            fname = self.qc_filename_prefix + "_station_" + station_code + ".xlsx"
+            fname = fname_prefix + "_station_" + station_code + ".xlsx"
             logging.info("[%s] Запись файла %s", station_code, fname)
 
             out_file = os.path.join(self.output_folder, fname)
@@ -958,8 +1061,8 @@ class Writer:
 
             wb.save(out_file)
 
-    def write_1_file_is_1_parameter_all_stations(
-        self, info: dict, dfs: dict, dict_ml_models: dict
+    def _write_1_file_is_1_parameter_all_stations(
+        self, fname_prefix: str, info: dict, dfs: dict, dict_ml_models: dict
     ) -> None:
         logging.info(
             "Формирование серии файлов: 1 файл = 1 метео-параметр (по имени) с метриками по станциям"
@@ -973,7 +1076,7 @@ class Writer:
 
         # Цикл по именам метео-параметров из par_names:
         for par_name in par_names:
-            fname = self.qc_filename_prefix + "_parameter_" + par_name + ".xlsx"
+            fname = fname_prefix + "_parameter_" + par_name + ".xlsx"
             logging.info("[%s] Запись файла %s", par_name, fname)
 
             out_file = os.path.join(self.output_folder, fname)
@@ -1003,9 +1106,31 @@ class Writer:
     def write_metrics(self, in_data: dict, metrics: dict) -> None:
         logging.info("Запись вычисленных метрик в файлы")
 
-        info = self._collect_info(in_data[list(in_data.keys())[0]])
-        dfs_metrics = self._gen_dfs_metrics(metrics)
-        dict_ml_models = self._collect_ml_models_info(in_data, list(metrics.keys()))
+        now_dates_list = list(metrics.keys())
 
-        self.write_1_file_is_1_station_all_parameters(info, dfs_metrics, dict_ml_models)
-        self.write_1_file_is_1_parameter_all_stations(info, dfs_metrics, dict_ml_models)
+        info = self._collect_info(in_data[list(in_data.keys())[0]])
+        dict_ml_models = self._collect_ml_models_info(in_data, now_dates_list)
+
+        dfs_metrics = self._gen_dfs_metrics(metrics)
+
+        self._write_1_file_is_1_station_all_parameters(
+            self.metrics_filename_prefix, info, dfs_metrics, dict_ml_models
+        )
+        self._write_1_file_is_1_parameter_all_stations(
+            self.metrics_filename_prefix, info, dfs_metrics, dict_ml_models
+        )
+
+    def write_data(self, in_data: dict, exp_data: dict, now_dates: list) -> None:
+        logging.info("Запись данных в файлы")
+
+        info = self._collect_info(in_data[list(in_data.keys())[0]])
+        dict_ml_models = self._collect_ml_models_info(in_data, now_dates)
+
+        dfs_data = self._gen_dfs_data(exp_data, now_dates)
+
+        self._write_1_file_is_1_station_all_parameters(
+            self.data_filename_prefix, info, dfs_data, dict_ml_models
+        )
+        self._write_1_file_is_1_parameter_all_stations(
+            self.data_filename_prefix, info, dfs_data, dict_ml_models
+        )

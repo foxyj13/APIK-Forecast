@@ -127,13 +127,15 @@ def init() -> dict:
             )
             return {}
 
-        if int(forecast_args["time-depth"][:-1]) <= int(
-            forecast_args["time-forecast"][:-1]
-        ):
+        if not check_plot_mode(main_args["plot-mode"]):
             logging.error(
-                "В режиме QC период обучения (time-depth) должен быть строго больше периода прогноза (time-forecast)"
+                "Указан неверный цветовой режим отрисовки графиков в QC-отчете: %s",
+                main_args["plot-mode"],
             )
-            return {}
+            logging.info(
+                "Будет использован режим отрисовки по умолчанию (color). Допустимые значения: bw, color, grad"
+            )
+            main_args["plot-mode"] = "color"
 
         # if int(main_args["step-date"][:-1]) > int(forecast_args["time-depth"][:-1]):
         #     logging.warning(
@@ -144,7 +146,8 @@ def init() -> dict:
         #     main_args["step-date"] = forecast_args["time-depth"]
 
     elif main_args["mode"] == "export":
-        ...
+        if main_args.get("case", "") != "default":
+            main_args["case"] = "default"
     else:
         logging.error("Ошибочный режим работы: %s", main_args["mode"])
         return {}
@@ -161,15 +164,13 @@ def init() -> dict:
         )
         return {}
 
-    if not check_plot_mode(main_args["plot-mode"]):
+    if int(forecast_args["time-depth"][:-1]) <= int(
+        forecast_args["time-forecast"][:-1]
+    ):
         logging.error(
-            "Указан неверный цветовой режим отрисовки графиков в QC-отчете: %s",
-            main_args["plot-mode"],
+            "В режиме QC период обучения (time-depth) должен быть строго больше периода прогноза (time-forecast)"
         )
-        logging.info(
-            "Будет использован режим отрисовки по умолчанию (color). Допустимые значения: bw, color, grad"
-        )
-        main_args["plot-mode"] = "color"
+        return {}
 
     if (
         main_args["mode"] == "qc" and main_args["case"] == "forecast_prepared"
@@ -237,48 +238,49 @@ def main():
         logging.info("Остановка программы")
         sys.exit(1)
 
-    if args["main-args"]["mode"] == "qc":
-        logging.info("Запуск в режиме генерации QC-отчета")
+    start_date = datetime.datetime.strptime(
+        args["main-args"]["start-date"], "%Y-%m-%d"
+    ).date()
+    end_date = datetime.datetime.strptime(
+        args["main-args"]["end-date"], "%Y-%m-%d"
+    ).date()
+    step_days = int(args["main-args"]["step-date"][:-1])
 
-        start_date = datetime.datetime.strptime(
-            args["main-args"]["start-date"], "%Y-%m-%d"
-        ).date()
-        end_date = datetime.datetime.strptime(
-            args["main-args"]["end-date"], "%Y-%m-%d"
-        ).date()
-        step_days = int(args["main-args"]["step-date"][:-1])
+    n_steps = math.ceil((end_date - start_date).days / step_days) + 1
 
-        n_steps = math.ceil((end_date - start_date).days / step_days) + 1
+    now_dates = [
+        start_date + datetime.timedelta(days=step_days * x) for x in range(n_steps)
+    ]
 
-        now_dates = [
-            start_date + datetime.timedelta(days=step_days * x) for x in range(n_steps)
+    # Добавление дополнительных прогнозов, чтобы было достаточно наблюдений для оценки качества
+    # создание словаря соответствия целевого прогноза и прогноза с наблюдениями
+    # Если для каких-то целевых прогнозов нет прогнозов с наблюдениями, то добавить их в расчет и проверку наличия
+    date_forec_obs = {}
+    for now_date in now_dates:
+        now_dates_with_obs = [
+            now_date + datetime.timedelta(days=dd)
+            for dd in range(
+                int(args["forecast-args"]["time-forecast"][:-1]) + 1,
+                int(args["forecast-args"]["time-depth"][:-1]) + 1,
+                1,
+            )
         ]
-        # Добавление дополнительных прогнозов, чтобы было достаточно наблюдений для оценки качества
-        # Сделать словарь соответствия целевого прогноза и прогноза с наблюдениями
-        # Если для каких-то целевых прогнозов нет прогнозов с наблюдениями, то добавить их в расчет и проверку наличия
-        date_forec_obs = {}
-        for now_date in now_dates:
+        if not now_dates_with_obs:
             now_dates_with_obs = [
-                now_date + datetime.timedelta(days=dd)
-                for dd in range(
-                    int(args["forecast-args"]["time-forecast"][:-1]) + 1,
-                    int(args["forecast-args"]["time-depth"][:-1]) + 1,
-                    1,
+                now_date
+                + datetime.timedelta(
+                    days=int(args["forecast-args"]["time-depth"][:-1]) + 1
                 )
             ]
-            if not now_dates_with_obs:
-                now_dates_with_obs = [
-                    now_date
-                    + datetime.timedelta(
-                        days=int(args["forecast-args"]["time-depth"][:-1]) + 1
-                    )
-                ]
-            obs_in_now_dates = set(now_dates) & set(now_dates_with_obs)
-            date_forec_obs[str(now_date)] = (
-                str(list(obs_in_now_dates)[0])
-                if obs_in_now_dates
-                else str(now_dates_with_obs[0])
-            )
+        obs_in_now_dates = set(now_dates) & set(now_dates_with_obs)
+        date_forec_obs[str(now_date)] = (
+            str(list(obs_in_now_dates)[0])
+            if obs_in_now_dates
+            else str(now_dates_with_obs[0])
+        )
+
+    if args["main-args"]["mode"] == "qc":
+        logging.info("Запуск в режиме генерации QC-отчета")
 
         if args["main-args"]["case"] == "need_forecast":
             logging.info("Запуск расчета прогнозов")
@@ -310,8 +312,8 @@ def main():
 
     if args["main-args"]["mode"] == "export":
         logging.info("Запуск экспорта данных")
-        # exporter = Reporter(args)
-        # exporter.export_data()
+        exporter = Reporter(args, date_forec_obs)
+        exporter.export_data()
 
     logging.info("Заканчиваем работу")
 
