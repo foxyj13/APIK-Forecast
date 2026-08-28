@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CFG_FILENAME="run_forecast.cfg"
+CFG_FILENAME="run_qc.cfg"
 
 # 1. Находим директорию скрипта (работает надежно в Bash)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,7 +8,7 @@ CFG_FILE="$SCRIPT_DIR/../config/$CFG_FILENAME"
 
 # 2. Проверяем, существует ли файл конфигурации
 if [[ ! -f "$CFG_FILE" ]]; then
-    echo "[ОШИБКА] Файл с аргументами для запуска прогноза не найден: $CFG_FILE" >&2
+    echo "[ОШИБКА] Файл с аргументами для запуска формирования QC-отчета не найден: $CFG_FILE" >&2
     exit 1
 fi
 
@@ -39,13 +39,7 @@ done < "$CFG_FILE"
 # 4. Проверяем работу загруженных переменных
 echo "Загрузка аргументов завершена."
 echo "-----------------------------------"
-echo "Режим расчета : ${MODE:-Не задан}"
-echo "Ключ отрисовки глобального прогноза : ${ADD_GLOBFORECAST_PLOT:-Не задан}"
-echo "Период обучения : ${TIME_DEPTH:-Не задан}"
-echo "Период прогноза : ${TIME_FORECAST:-Не задан}"
-echo "Тип глобального прогноза : ${FORECAST_TYPE:-Не задан}"
-echo "Текущая дата : ${NOW_DATE:-Не задан}"
-echo "Конфигурационный файл : ${CONFIG_FILE:-Не задан}"
+echo "Конфигурационный файл : ${FARGS:-Не задан}"
 echo "-----------------------------------"
 
-python ../src/forecast/main.py --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE
+python ../src/qc/main.py --fargs=$FARGS

@@ -2,7 +2,7 @@
 chcp 65001 > nul
 setlocal EnableDelayedExpansion
 
-set "CFG_FILENAME=run_forecast.cfg"
+set "CFG_FILENAME=run_qc.cfg"
 
 :: 1. Указываем путь к файлу конфигурации
 set "cfg_file=%~dp0..\config\%CFG_FILENAME%"
@@ -34,16 +34,10 @@ for /f "usebackq eol=# tokens=1* delims==" %%A in ("!cfg_file!") do (
 
 :: 4. Проверяем, как загрузились наши аргументы
 echo Загрузка аргументов завершена.
-echo Режим расчета: %MODE%
-echo Ключ отрисовки глобального прогноза: %ADD_GLOBFORECAST_PLOT%
-echo Период обучения: %TIME_DEPTH%
-echo Период прогноза: %TIME_FORECAST%
-echo Тип глобального прогноза: %FORECAST_TYPE%
-echo Текущая дата: %NOW_DATE%
-echo Конфигурационный файл: %CONFIG_FILE%
+echo Конфигурационный файл: %FARGS%
 
 echo Запуск расчета прогноза
 
-python ..\src\forecast\main.py --mode=%MODE% --add-globforecast-plot=%ADD_GLOBFORECAST_PLOT% --time-depth=%TIME_DEPTH% --time-forecast=%TIME_FORECAST% --forecast-type=%FORECAST_TYPE% --now-date=%NOW_DATE% --config=%CONFIG_FILE%
+python ..\src\qc\main.py --fargs=%FARGS%
 
 pause
