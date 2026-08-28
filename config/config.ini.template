@@ -1,0 +1,75 @@
+# ==============================================================
+# Аргументы для работы блока расчет прогнозов метео-параметров 
+# ==============================================================
+
+# Аргументы для взаимодействия с базой данных наблюдений ИМКЭС СО РАН
+[DB]
+server=imces.ru
+port=
+user=
+password=
+database=apik3
+
+# Аргументы для взаимодействия с базой данных глобальных прогнозов Open-Meteo
+[OM]
+url-realtime-forecast=https://api.open-meteo.com/v1/forecast
+# url-historical-forecast=https://archive-api.open-meteo.com/v1/archive
+url-historical-forecast=https://historical-forecast-api.open-meteo.com/v1/forecast
+# Полный список моделей (model), глобальные прогнозы которых могут быть использованы, см. в документации
+model=best_match
+#model=ncep_gfs_global
+
+# Общие аргументы для работы программы расчета прогнозов
+[main]
+#stations-file=input/stations_dbk2_om_test_1st_hadarta.xlsx
+#stations-file=input/stations_dbk2_om_test_1st_stvasug.xlsx
+stations-file=input/stations_dbk2_om_test_3st.xlsx
+ml-config-file=config/config_ml.ini
+
+# Идентификатор эксперимента (задается произвольно, должно быть БЕЗ пробелов):
+# будет вписан в имя pkl-файла с результатами расчетов
+#experiment-name=exp1-stat-qc
+experiment-name=exp1-qc
+
+# Сохранение всех данных расчета в файл:
+# если verbose=True, то осуществляется вывод в pkl-файл в директорию ml-info-folder информации о работе программы: 
+# использованные модели, их оценки, данные наблюдений, промежуточные и финальные результаты прогнозирования
+# для всех станций и всех метеопараметров
+# Создаваемые pkl-файлы используются при формировании QC-отчетов и для экспорта данных наблюдений и прогнозов
+ml-verbose=True
+ml-info-folder=export_ml
+
+# Опции отрисовки прогнозов:
+# Если plot_mode=static => отрисовка только статических изображений
+# Если plot_mode=interactive => отрисовка только статических и интерактивных изображений
+# Если images-bw=False => Статические изображения отрисовываются в цвете
+# Если images-bw=True => Статические изображения отрисовываются черно-белыми
+plot_mode=static
+#plot_mode=interactive
+images-bw=False
+
+# Список метео=параметров для интерактивного отображения (plot_mode=interactive)
+#variables=ta, rh, pres, prc, ts0
+variables=ta, rh, pres
+
+# Составляющие для имен html- и js-файлов: 
+# <html-plot-basename>_<experiment-name>.html
+# <js-plot-basename>_<experiment-name>_<variables[i]>.js
+html-plot-basename=plot
+html-plot-title=Локальные прогнозы
+js-plot-basename=plot
+
+# Имена директорий для вывода логов работы программы (log-folder),
+# статических изображений (images-folder) и интерактивных изображений (web-folder)
+log-folder=log
+images-folder=images
+web-folder=web
+
+# Суффиксы имен файлов для статической отрисовки только наблюдений
+recent-table-suffix=recent
+365d-plot-suffix=ann
+30d-plot-suffix=mon
+14d-plot-suffix=2weeks
+7d-plot-suffix=week
+3d-plot-suffix=3days
+1d-plot-suffix=day
