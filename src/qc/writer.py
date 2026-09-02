@@ -62,9 +62,10 @@ class Writer:
 
         self.self_metrics = ["min", "max", "mean", "med"]
         self.sub_self = [
-            "obs",
+            "obs_td" + self.time_depth,
             "loc_td" + self.time_depth,
             "glob_td" + self.time_depth,
+            "obs_tf" + self.time_forecast,
             "loc_tf" + self.time_forecast,
             "glob_tf" + self.time_forecast,
         ]
@@ -312,8 +313,8 @@ class Writer:
                         for metr in self.self_metrics:
                             row_values.append(
                                 metrics[now_date_str][station_code][par_name]["obs"][
-                                    metr
-                                ]
+                                    "past"
+                                ][metr]
                             )
 
                             if metrics[now_date_str][station_code][par_name]["local"][
@@ -343,6 +344,11 @@ class Writer:
                             else:
                                 row_values.append(None)
 
+                            row_values.append(
+                                metrics[now_date_str][station_code][par_name]["obs"][
+                                    "future"
+                                ][metr]
+                            )
                             if metrics[now_date_str][station_code][par_name]["local"][
                                 "future"
                             ]:
@@ -651,7 +657,11 @@ class Writer:
             ws.cell(column=1, row=irow + 1).value,
             ws.cell(column=1, row=irow + 1).font,
             ws.cell(column=2, row=irow + 1).value,
-        ) = ("obs", FT_BOLD, "Наблюдения из БД ИМКЭС")
+        ) = (
+            "obs_td<X>d",
+            FT_BOLD,
+            "Наблюдения из БД ИМКЭС на периоде обучения из <X> дней (time-depth=<X>d)",
+        )
         (
             ws.cell(column=1, row=irow + 2).value,
             ws.cell(column=1, row=irow + 2).font,
@@ -670,19 +680,29 @@ class Writer:
             FT_BOLD,
             "Глобальный прогноз на периоде обучения из <X> дней (time-depth=<X>d)",
         )
+
         (
             ws.cell(column=1, row=irow + 4).value,
             ws.cell(column=1, row=irow + 4).font,
             ws.cell(column=2, row=irow + 4).value,
+        ) = (
+            "obs_tf<Y>d",
+            FT_BOLD,
+            "Наблюдения из БД ИМКЭС на периоде прогноз вперед от текущей даты из <Y> дней (time-forecast=<Y>d)",
+        )
+        (
+            ws.cell(column=1, row=irow + 5).value,
+            ws.cell(column=1, row=irow + 5).font,
+            ws.cell(column=2, row=irow + 5).value,
         ) = (
             "loc_tf<Y>d",
             FT_BOLD,
             "Локальный прогноз вперед от текущей даты из <Y> дней (time-forecast=<Y>d)",
         )
         (
-            ws.cell(column=1, row=irow + 5).value,
-            ws.cell(column=1, row=irow + 5).font,
-            ws.cell(column=2, row=irow + 5).value,
+            ws.cell(column=1, row=irow + 6).value,
+            ws.cell(column=1, row=irow + 6).font,
+            ws.cell(column=2, row=irow + 6).value,
         ) = (
             "glob_tf<Y>d",
             FT_BOLD,
@@ -935,7 +955,11 @@ class Writer:
             ws.cell(column=1, row=irow + 1).value,
             ws.cell(column=1, row=irow + 1).font,
             ws.cell(column=2, row=irow + 1).value,
-        ) = ("obs", FT_BOLD, "Наблюдения из БД ИМКЭС")
+        ) = (
+            "obs_td<X>d",
+            FT_BOLD,
+            "Наблюдения из БД ИМКЭС на периоде обучения из <X> дней (time-depth=<X>d)",
+        )
         (
             ws.cell(column=1, row=irow + 2).value,
             ws.cell(column=1, row=irow + 2).font,
@@ -954,19 +978,29 @@ class Writer:
             FT_BOLD,
             "Глобальный прогноз на периоде обучения из <X> дней (time-depth=<X>d)",
         )
+
         (
             ws.cell(column=1, row=irow + 4).value,
             ws.cell(column=1, row=irow + 4).font,
             ws.cell(column=2, row=irow + 4).value,
+        ) = (
+            "obs_tf<Y>d",
+            FT_BOLD,
+            "Наблюдения из БД ИМКЭС на периоде прогноз вперед от текущей даты из <Y> дней (time-forecast=<Y>d)",
+        )
+        (
+            ws.cell(column=1, row=irow + 5).value,
+            ws.cell(column=1, row=irow + 5).font,
+            ws.cell(column=2, row=irow + 5).value,
         ) = (
             "loc_tf<Y>d",
             FT_BOLD,
             "Локальный прогноз вперед от текущей даты из <Y> дней (time-forecast=<Y>d)",
         )
         (
-            ws.cell(column=1, row=irow + 5).value,
-            ws.cell(column=1, row=irow + 5).font,
-            ws.cell(column=2, row=irow + 5).value,
+            ws.cell(column=1, row=irow + 6).value,
+            ws.cell(column=1, row=irow + 6).font,
+            ws.cell(column=2, row=irow + 6).value,
         ) = (
             "glob_tf<Y>d",
             FT_BOLD,

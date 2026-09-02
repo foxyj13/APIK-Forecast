@@ -199,6 +199,7 @@ class Validator:
             logging.info("[%s]", par_name)
 
             metrics[par_name] = {}
+            metrics[par_name]["obs"] = {}
             metrics[par_name]["local"] = {}
             metrics[par_name]["global"] = {}
 
@@ -206,8 +207,14 @@ class Validator:
 
             # Расчет метрик для наблюдений
             if ("data" in parameter) and (parameter["data"][self.time_depth]):
-                metrics[par_name]["obs"] = self._get_self_metrics(
+                metrics[par_name]["obs"]["past"] = self._get_self_metrics(
                     parameter["data"][self.time_depth]
+                )
+
+                metrics[par_name]["obs"]["future"] = self._get_self_metrics(
+                    station_next["parameters"][par_name]["data"][self.time_depth][
+                        obs_future_start : obs_future_end + 1
+                    ]
                 )
 
                 # Расчет метрик для локального прогноза
