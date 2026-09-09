@@ -35,6 +35,7 @@ input/
 log/
 web/
 qc_reports/
+qc_reports*/
 requirements_*.txt
 *.ipynb
 .cache.sqlite
