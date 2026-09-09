@@ -512,12 +512,23 @@ class Adjustmenter:
     def get_config(self) -> dict:
         return self.config
 
-    def get_station_par_models_info(self, station_code, par_name) -> dict:
+    def get_station_par_models_info(self, station_code, par_name, model_type) -> dict:
 
         if (station_code in self.station_calc_info) and (
             par_name in self.station_calc_info[station_code]
         ):
-            return self.station_calc_info[station_code][par_name]
+            # if model_type == "models":
+            #     return self.station_calc_info[station_code][par_name].get(
+            #         model_type, {}
+            #     )
+            # elif model_type == "chosen_model":
+            #     if "chosen_model" in self.station_calc_info[station_code][par_name]:
+            #         return self.station_calc_info[station_code][par_name][
+            #             "chosen_model"
+            #         ].get("model", "")
+            #     else:
+            #         return ""
+            return self.station_calc_info[station_code][par_name].get(model_type, {})
 
         return {}
 
@@ -885,7 +896,7 @@ class Adjustmenter:
         forecast_type: str,
         parameter_key: str,
         train_predict_sets: dict,
-    ) -> tuple[list, list, dict]:
+    ) -> tuple[list, list, dict, dict]:
 
         def logging_err_status(model_type: str) -> None:
             if train_predict_sets[model_type]["status"] == 0:
@@ -908,6 +919,7 @@ class Adjustmenter:
         model_cfg = self.config[parameter_key]
 
         mods_info = {}
+        chosen_model = {}
 
         model_set = model_cfg["model-set"]
         model_params_user = model_cfg["model-params-user"]
@@ -974,6 +986,10 @@ class Adjustmenter:
                         model_type = "common"
 
                         if train_predict_sets[model_type]["status"]:  # т.е. status == 1
+                            logging.info(
+                                "Подготовка обучающих и тестовых наборов данных для модели %s",
+                                model_name,
+                            )
                             x_train = train_predict_sets[model_type]["x_train"]
                             y_train = train_predict_sets[model_type]["y_train"]
                             x_past_predict = train_predict_sets[model_type][
@@ -985,13 +1001,36 @@ class Adjustmenter:
 
                             param_grid = self.ml_models[model_name]["param_grid"]
 
+                            logging.info(
+                                "Запуск GridSearchCV для модели %s с параметрами: %s",
+                                model_name,
+                                param_grid,
+                            )
                             model = GridSearchCV(model_cls(), param_grid, cv=5)
                             model.fit(np.array(x_train), np.array(y_train))
 
+                            logging.info(
+                                "Лучшие параметры для модели %s: %s",
+                                model_name,
+                                model.best_params_,
+                            )
+                            logging.info(
+                                "Лучшее значение метрики качества на кросс-валидации для модели %s: %f",
+                                model_name,
+                                model.best_score_,
+                            )
                             result_predict[model_idx] = {}
 
+                            logging.info(
+                                "Прогнозирование с использованием лучшей модели для %s",
+                                model_name,
+                            )
                             y_test = model.best_estimator_.predict(np.array(x_train))
 
+                            logging.info(
+                                "Оценка качества модели %s на тренировочном наборе данных",
+                                model_name,
+                            )
                             # Диагностический вывод будет всех метрик
                             result_predict[model_idx]["r2"] = r2_score(y_train, y_test)
                             result_predict[model_idx]["rmse"] = root_mean_squared_error(
@@ -1252,18 +1291,44 @@ class Adjustmenter:
             if len(model_set) == 1:
                 y_past_predict = result_predict[0]["y_past_predict"]
                 y_future_predict = result_predict[0]["y_future_predict"]
+                chosen_model["model_type"] = "only"
+                chosen_model["model"] = model_set[0]
+
+                logging.info(
+                    "Используется единственная модель машинного обучения %s для построения прогноза",
+                    model_set[0],
+                )
             else:
                 if get_result_way == "best":
                     # См. по какой метрике лучшая (best_result_metrics). М.б. другая из self.inner_metrics
-                    best_model_idx = max(
-                        result_predict,
-                        key=lambda idx: result_predict[idx][best_result_metrics],
+                    best_model_idx = (
+                        max(
+                            result_predict,
+                            key=lambda idx: result_predict[idx].get(
+                                best_result_metrics, 0.0
+                            ),
+                        )
+                        if best_result_metrics == "r2"
+                        else min(
+                            result_predict,
+                            key=lambda idx: result_predict[idx].get(
+                                best_result_metrics, float("inf")
+                            ),
+                        )
                     )
 
                     y_past_predict = result_predict[best_model_idx]["y_past_predict"]
                     y_future_predict = result_predict[best_model_idx][
                         "y_future_predict"
                     ]
+
+                    chosen_model["model_type"] = "best"
+                    chosen_model["model"] = model_set[best_model_idx]
+
+                    logging.info(
+                        "Используется лучшая модель машинного обучения %s для построения прогноза",
+                        model_set[best_model_idx],
+                    )
 
                 elif get_result_way == "mean":
                     y_past_predict = np.mean(
@@ -1280,6 +1345,13 @@ class Adjustmenter:
                         ],
                         axis=0,
                     )
+
+                    chosen_model["model_type"] = "mean"
+                    chosen_model["model"] = ""
+
+                    logging.info(
+                        "Используется усредненный прогноз по всем моделям машинного обучения для построения прогноза"
+                    )
                 else:
                     logging.error(
                         "Недопустимое значение для ключа 'get-result' в ML-конфигурации: %s. Допустимые значения: 'best', 'mean'",
@@ -1294,7 +1366,7 @@ class Adjustmenter:
             y_past_predict = []  # x_past_predict
             y_future_predict = []  # x_future_predict
 
-        return list(y_past_predict), list(y_future_predict), mods_info
+        return list(y_past_predict), list(y_future_predict), mods_info, chosen_model
 
     def get_local_forecast(self, station: dict) -> dict:
         logging.info(
@@ -1374,15 +1446,19 @@ class Adjustmenter:
                     else:
                         par_key = "default"
 
-                    mod_local_past, mod_local_future, models_info = (
+                    mod_local_past, mod_local_future, models_info, chosen_model = (
                         self._get_ml_forecast(
                             forecast_type, par_key, train_predict_sets
                         )
                     )
 
-                    self.station_calc_info[station["code"]][
-                        par_short_name
+                    self.station_calc_info[station["code"]][par_short_name] = {}
+                    self.station_calc_info[station["code"]][par_short_name][
+                        "models"
                     ] = models_info
+                    self.station_calc_info[station["code"]][par_short_name][
+                        "chosen_model"
+                    ] = chosen_model
 
                     parameter["om_data_local"] = {}
                     parameter["om_data_local"]["past"] = {}
