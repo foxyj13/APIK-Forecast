@@ -298,6 +298,13 @@ def main():
             dates_forec_list = sorted(
                 list(set(date_forec_obs.keys()) | set(date_forec_obs.values()))
             )
+
+            logging.info(
+                "Будет рассчитано %s прогнозов для следующих дат: %s",
+                len(dates_forec_list),
+                dates_forec_list,
+            )
+
             for now_date in dates_forec_list:
                 run_forecast(forecast_main_program, args, now_date)
 
