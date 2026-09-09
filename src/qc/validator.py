@@ -172,6 +172,31 @@ class Validator:
 
         return result
 
+    @staticmethod
+    def _get_mutual_daily_metrics(data_obs: list, data_mod: list) -> dict:
+        n_days = len(data_obs) // 24
+
+        result = {
+            "rmse_day": [],
+            "r2_day": [],
+            "me_day": [],
+            "mae_day": [],
+            "mre_day": [],
+            "nse_day": [],
+            "kge_day": [],
+        }
+
+        for day in range(n_days):
+            day_obs = data_obs[day * 24 : (day + 1) * 24]
+            day_mod = data_mod[day * 24 : (day + 1) * 24]
+
+            daily_metrics = Validator._get_mutual_metrics(day_obs, day_mod)
+
+            for key in daily_metrics:
+                result[key + "_day"].append(daily_metrics[key])
+
+        return result
+
     def get_metrics(self, station_now: dict, station_next: dict) -> dict:
 
         def _get_obs_future_idx(
@@ -257,6 +282,17 @@ class Validator:
                                     ],
                                 )
                             )
+
+                            metrics[par_name]["local"]["future"].update(
+                                self._get_mutual_daily_metrics(
+                                    station_next["parameters"][par_name]["data"][
+                                        self.time_depth
+                                    ][obs_future_start : obs_future_end + 1],
+                                    parameter["data_local"]["future"][
+                                        self.time_forecast
+                                    ],
+                                )
+                            )
                     else:
                         metrics[par_name]["local"]["future"] = {}
 
@@ -313,6 +349,17 @@ class Validator:
                             ]:
                                 metrics[par_name]["global"]["future"].update(
                                     self._get_mutual_metrics(
+                                        station_next["parameters"][par_name]["data"][
+                                            self.time_depth
+                                        ][obs_future_start : obs_future_end + 1],
+                                        station_now["predictors_data"][om_par_name][
+                                            "future"
+                                        ][self.time_forecast],
+                                    )
+                                )
+
+                                metrics[par_name]["global"]["future"].update(
+                                    self._get_mutual_daily_metrics(
                                         station_next["parameters"][par_name]["data"][
                                             self.time_depth
                                         ][obs_future_start : obs_future_end + 1],
