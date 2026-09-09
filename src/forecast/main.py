@@ -216,7 +216,11 @@ def get_station_info(
         st_par_info["data"] = {time_depth: par_info["data"][time_depth]}
 
         st_par_info["models"] = ml_adj.get_station_par_models_info(
-            station["code"], par_name
+            station["code"], par_name, "models"
+        )
+
+        st_par_info["chosen_model"] = ml_adj.get_station_par_models_info(
+            station["code"], par_name, "chosen_model"
         )
 
         st_par_info["data_local"] = (
