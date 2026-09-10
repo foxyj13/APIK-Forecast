@@ -1,3 +1,4 @@
+from bisect import bisect_left, bisect_right
 from copy import deepcopy
 import datetime
 import logging
@@ -80,17 +81,36 @@ class OMReader:
             for par_name, par_info in parameters.items():
                 data_orig = par_info[time_type][time_depth]
 
-                to_hourly = interpolate.interp1d(
-                    x=timeline_timestamp_orig,
-                    y=data_orig,
-                    kind="nearest",
-                    bounds_error=False,
-                    fill_value=np.nan,
-                    assume_sorted=True,
-                )
-                par_info[time_type][time_depth] = list(
-                    to_hourly(timeline_timestamp_ref)
-                )
+                if par_name == "precipitation":
+                    # Для осадков используем накопление (сумму) за предыдущий час, а не ближайшее значение
+                    to_hourly = []
+                    for t in timeline_ref:
+                        start_time = t - datetime.timedelta(hours=1)
+                        end_time = t
+
+                        # Используем бинарный поиск для поиска индексов элементов,
+                        # которые попадают строго в интервал (start_time, end_time]
+                        idx_start = bisect_right(timeline_orig, start_time)
+                        idx_end = bisect_right(timeline_orig, end_time)
+
+                        # Считаем сумму элементов, попавших в этот диапазон индексов
+                        # Если в интервале (T - 1 час, T] данных нет (например, в кейсе с редкой записью),
+                        # то idx_start и idx_end совпадут, срез вернет пустой список, а функция sum() вернет 0.0
+                        hourly_sum = sum(data_orig[idx_start:idx_end])
+
+                        to_hourly.append(float(hourly_sum))
+                else:
+                    to_hourly = interpolate.interp1d(
+                        x=timeline_timestamp_orig,
+                        y=data_orig,
+                        kind="nearest",
+                        bounds_error=False,
+                        fill_value=np.nan,
+                        assume_sorted=True,
+                    )
+                    par_info[time_type][time_depth] = list(
+                        to_hourly(timeline_timestamp_ref)
+                    )
 
             return timelines, parameters
 
