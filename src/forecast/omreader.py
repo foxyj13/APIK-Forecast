@@ -99,6 +99,7 @@ class OMReader:
                         hourly_sum = sum(data_orig[idx_start:idx_end])
 
                         to_hourly.append(float(hourly_sum))
+                    par_info[time_type][time_depth] = to_hourly
                 else:
                     to_hourly = interpolate.interp1d(
                         x=timeline_timestamp_orig,
