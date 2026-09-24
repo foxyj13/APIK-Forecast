@@ -33,7 +33,7 @@ def read_args():
 
     parser.add_argument(
         "--mode",
-        help="Program mode (obs_plot | forec_adj):\n\tobs_plot - observations only plot only;\n\tforec_adj - get local forecasts and plot them and observations",
+        help="Program mode (obs_plot | forec_adj | forec_stat):\n\tobs_plot - plot only observations + global forecast;\n\tforec_adj - get local forecasts (by Open-Meteo + DB IMCES) and plot them;\n\tforec_stat - get local forecasts (by DB IMCES only) and plot them",
         type=str,
         choices=["obs_plot", "forec_adj", "forec_stat"],
         default="obs_plot",
@@ -49,14 +49,14 @@ def read_args():
         "--time-depth",
         help="Time depth for observations and/or forecasts (1d, 3d, 7d, 14d, 30d)",
         type=str,
-        choices=["1d", "3d", "7d", "14d", "30d"],
+        # choices=["1d", "3d", "7d", "14d", "30d"],
         default="1d",
     )
     parser.add_argument(
         "--time-forecast",
         help="Time forecast (0d, 1d, 3d, 7d, 14d)",
         type=str,
-        choices=["0d", "1d", "3d", "7d", "14d"],
+        # choices=["0d", "1d", "3d", "7d", "14d"],
         default="0d",
     )
     parser.add_argument(
@@ -456,7 +456,9 @@ def main():
         logging.info("Считываем данные наблюдений")
         dell_stations = []
         for idx, station in enumerate(stations):
-            station = db_reader.get_station_data(station=station, time_depth=time_depth)
+            station = db_reader.get_station_data_one_period(
+                station=station, time_depth=time_depth
+            )
             if not station:
                 dell_stations.append(idx)
                 logging.warning("Внимание! Какие-то проблемы. Пропускаю станцию.")
@@ -479,7 +481,11 @@ def main():
             )
             sys.exit(1)
 
-        if ((mode == "forec_adj") or (mode == "forec_stat")) or add_globforecast_plot:
+        if (
+            (mode == "forec_adj")
+            or (mode == "forec_stat")
+            or ((mode == "obs_plot") and add_globforecast_plot)
+        ):
             # ------------ Чтение глобальных прогнозов ------------
             om_reader = OMReader(
                 url=om_url,
@@ -627,41 +633,46 @@ def main():
                 logging.error("Не удалось получить глобальные прогнозы!")
 
         else:
-            # ------------ Отрисовка только наблюдений ------------
-            if (plot_mode == "static") or (plot_mode == "interactive"):
-                logging.info("Строим статичные графики для наблюдений")
+            logging.warning(
+                "Невыполнимая комбинация ключей mode = %s и add_globforecast_plot = %s",
+                mode,
+                str(add_globforecast_plot),
+            )
+            # # ------------ Отрисовка только наблюдений ------------
+            # if (plot_mode == "static") or (plot_mode == "interactive"):
+            #     logging.info("Строим статичные графики для наблюдений")
 
-                plotter = Plotter(dict(main_config))
+            #     plotter = Plotter(dict(main_config))
 
-                for station in stations:
-                    plotter.make_table(station=station)
-                    plotter.make_plots(station=station, time_depth=time_depth)
+            #     for station in stations:
+            #         plotter.make_table(station=station)
+            #         plotter.make_plots(station=station, time_depth=time_depth)
 
-            if plot_mode == "interactive":
-                # Построение интерактивных графиков
-                # Выбор перерменных для отрисовки:
-                #   если указаны в config.ini, то берем их; иначе все, что есть в наличие
-                if main_config.get("variables", ""):
-                    variables = list(
-                        map(str.strip, main_config["variables"].split(","))
-                    )
-                else:
-                    all_variables_names = set()
-                    for station in stations:
-                        all_variables_names.update(set(station["parameters"].keys()))
-                    variables = list(all_variables_names)
+            # if plot_mode == "interactive":
+            #     # Построение интерактивных графиков
+            #     # Выбор перерменных для отрисовки:
+            #     #   если указаны в config.ini, то берем их; иначе все, что есть в наличие
+            #     if main_config.get("variables", ""):
+            #         variables = list(
+            #             map(str.strip, main_config["variables"].split(","))
+            #         )
+            #     else:
+            #         all_variables_names = set()
+            #         for station in stations:
+            #             all_variables_names.update(set(station["parameters"].keys()))
+            #         variables = list(all_variables_names)
 
-                if stations:
-                    # Отрисовка данных
-                    logging.info(
-                        "Строим дополнительно интерактивные графики для наблюдений"
-                    )
-                    plotter_js = PlotterJS(
-                        config=dict(main_config),
-                        stations=stations,
-                        time_depth=time_depth,
-                    )
-                    plotter_js.make_plots(variables=variables)
+            #     if stations:
+            #         # Отрисовка данных
+            #         logging.info(
+            #             "Строим дополнительно интерактивные графики для наблюдений"
+            #         )
+            #         plotter_js = PlotterJS(
+            #             config=dict(main_config),
+            #             stations=stations,
+            #             time_depth=time_depth,
+            #         )
+            #         plotter_js.make_plots(variables=variables)
 
     logging.info("Заканчиваем работу")
 

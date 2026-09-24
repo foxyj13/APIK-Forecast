@@ -401,6 +401,209 @@ class DBReader:
             return {}
         return result
 
+    def get_station_data_one_period(
+        self, station: dict, time_depth: str = "7d"
+    ) -> dict:
+
+        def timeline_to_hourly(
+            time_depth: str,
+            datetime_ranges: dict,  # result["db_time_range_past"],
+            timelines: dict,  # result["db_time_past"],
+            parameters: dict,  # station["parameters"],
+        ):
+            logging.info(
+                "Преобразование данных к ежечасным: выбирается ближайшее к полному часу значение"
+            )
+
+            dt_range = [
+                datetime_ranges[time_depth][0].replace(
+                    minute=0, second=0, microsecond=0
+                )
+                + datetime.timedelta(hours=1),
+                datetime_ranges[time_depth][1].replace(
+                    minute=0, second=0, microsecond=0
+                ),
+            ]
+
+            hours_diff = ((dt_range[1] - dt_range[0]).days + 1) * 24
+            timeline_ref = [
+                dt_range[0] + datetime.timedelta(hours=dh) for dh in range(hours_diff)
+            ]
+
+            timeline_orig = timelines[time_depth]
+
+            timeline_timestamp_ref = [time_val.timestamp() for time_val in timeline_ref]
+            timeline_timestamp_orig = [
+                time_val.timestamp() for time_val in timeline_orig
+            ]
+
+            timelines[time_depth] = timeline_ref
+
+            for par_name, par_info in parameters.items():
+                data_orig = par_info["data"][time_depth]
+
+                if par_name == "prc":
+                    # Для осадков используем накопление (сумму) за предыдущий час, а не ближайшее значение
+                    to_hourly = []
+                    for t in timeline_ref:
+                        start_time = t - datetime.timedelta(hours=1)
+                        end_time = t
+
+                        # Используем бинарный поиск для поиска индексов элементов,
+                        # которые попадают строго в интервал (start_time, end_time]
+                        idx_start = bisect_right(timeline_orig, start_time)
+                        idx_end = bisect_right(timeline_orig, end_time)
+
+                        # Считаем сумму элементов, попавших в этот диапазон индексов
+                        # Если в интервале (T - 1 час, T] данных нет (например, в кейсе с редкой записью),
+                        # то idx_start и idx_end совпадут, срез вернет пустой список, а функция sum() вернет 0.0
+                        hourly_sum = sum(data_orig[idx_start:idx_end])
+
+                        to_hourly.append(float(hourly_sum))
+                    par_info["data"][time_depth] = to_hourly
+
+                else:
+                    to_hourly = interpolate.interp1d(
+                        x=timeline_timestamp_orig,
+                        y=data_orig,
+                        kind="nearest",
+                        bounds_error=False,
+                        fill_value=np.nan,
+                        assume_sorted=True,
+                    )
+                    par_info["data"][time_depth] = list(
+                        to_hourly(timeline_timestamp_ref)
+                    )
+
+            return timelines, parameters
+
+        logging.info(
+            "Считываю данные из БД для станции %s (%s)",
+            station["code"],
+            station["full_name"],
+        )
+
+        station_lon = station["lon"]
+        station_lat = station["lat"]
+        station_timezone_str = self.timezone_obj.timezone_at(
+            lng=station_lon, lat=station_lat
+        )
+        now_date = datetime.datetime.combine(
+            self.now_date,
+            datetime.datetime.min.time(),
+            tzinfo=ZoneInfo(station_timezone_str),
+        )
+
+        # Определение временных пределов для past
+        utc_now = now_date.timestamp()
+        utc_now_date = datetime.datetime.fromtimestamp(
+            utc_now, tz=datetime.timezone.utc
+        )
+
+        # now - time_depth
+        utc_td_before = utc_now - int(time_depth[:-1]) * 24 * 60 * 60
+        utc_td_before_date = datetime.datetime.fromtimestamp(
+            utc_td_before, tz=datetime.timezone.utc
+        )
+
+        result = station
+
+        if self.meta and self.session and station["code"] in self.meta.tables:
+            data_tbl = self.meta.tables[station["code"]]
+            qry = self.session.query(data_tbl.columns["timezone"].label("timezone"))
+            qry = qry.add_columns(data_tbl.columns["time"].label("time"))
+            for parameter in station["parameters"].values():
+                if parameter["code"] in data_tbl.columns.keys():
+                    qry = qry.add_columns(
+                        data_tbl.columns[parameter["code"]].label(parameter["name"])
+                    )
+                else:
+                    logging.error(
+                        'ОШИБКА! Нет кода: %s для параметра "%s"',
+                        parameter["code"],
+                        parameter["name"],
+                    )
+                    return result
+            qry = qry.select_from(data_tbl)
+            # Здесь и далее (- 3 * 60 * 60) необходимо, чтобы правильно привести осадки к часовым значениям
+            qry_f = qry.filter(
+                data_tbl.c.time >= utc_td_before - 3 * 60 * 60,
+                data_tbl.c.time <= utc_now,
+            )
+            try:
+                rows = qry_f.all()
+            except NoResultFound:
+                logging.error("ОШИБКА! В БД не найдено ни одного результата!")
+                return {}
+
+            data_present = True
+            if not rows:
+                logging.warning(
+                    "Внимание! За запрошенный диапазон (%s) нет данных для станции %s. "
+                    "Использую последние доступные.",
+                    time_depth,
+                    station["code"],
+                )
+                data_present = False
+                rows = qry.all()
+
+            # Prepare
+            station_timeshift = datetime.timedelta(hours=rows[0].timezone)
+
+            result["station_timeshift"] = station_timeshift
+
+            result["db_time_past"] = {time_depth: []}
+
+            result["db_time_range_past"] = {
+                time_depth: [
+                    utc_td_before_date + station_timeshift,
+                    utc_now_date + station_timeshift,
+                ]
+            }
+
+            for parameter in station["parameters"].values():
+                parameter["data"] = {time_depth: []}
+
+            if data_present:
+                # Store date and time.
+                for row in rows:
+                    # Read time and data. Set missing data values to None
+                    row_time = (
+                        datetime.datetime.fromtimestamp(
+                            row.time, tz=datetime.timezone.utc
+                        )
+                        + station_timeshift
+                    )
+
+                    result["db_time_past"][time_depth].append(row_time)
+
+                    for parameter in station["parameters"].values():
+                        row_value = self._fix_value(
+                            row._mapping[parameter["name"]], parameter["no_value"]
+                        )
+
+                        parameter["data"][time_depth].append(row_value)
+
+                db_time_past, parameters = timeline_to_hourly(
+                    time_depth,
+                    result["db_time_range_past"],
+                    result["db_time_past"],
+                    station["parameters"],
+                )
+                result["db_time_past"] = db_time_past
+                station["parameters"] = parameters
+
+            result["db_time_past"]["recent"] = result["db_time_past"][time_depth][-1]
+            for parameter in station["parameters"].values():
+                parameter["data"]["recent"] = parameter["data"][time_depth][-1]
+
+        else:
+            logging.error(
+                "ОШИБКА! Станции с кодом %s в БД не обнаружено!", station["code"]
+            )
+            return {}
+        return result
+
     def get_station_predictors(
         self, station: dict, time_depth: str, time_forecast: str
     ) -> tuple[bool, dict]:
@@ -588,9 +791,7 @@ class DBReader:
             station_timeshift = datetime.timedelta(hours=rows_prepast[0].timezone)
 
             station["om_time_prepast"] = {time_depth: []}
-            station["om_time_past"] = {
-                time_depth: [],
-            }
+            station["om_time_past"] = {time_depth: []}
 
             station["om_time_range_prepast"] = {}
             station["om_time_range_past"] = {}
