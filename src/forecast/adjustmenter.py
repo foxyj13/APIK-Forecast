@@ -26,10 +26,18 @@ from sklearn.model_selection import GridSearchCV
 
 
 class Adjustmenter:
-    def __init__(self, config, now_date, time_depth: str, time_forecast: str):
+    def __init__(
+        self,
+        config,
+        now_date,
+        time_depth: str,
+        time_forecast: str,
+        max_missings_percent: float,
+    ):
         self.now_date = now_date
         self.time_depth = time_depth
         self.time_forecast = time_forecast
+        self.max_missings_percent = max_missings_percent
 
         self.ml_models = self._set_available_models()
         self.ml_models_list = list(self.ml_models.keys())
@@ -560,6 +568,7 @@ class Adjustmenter:
         predictor_data: dict,
         time_depth: str,
         time_forecast: str,
+        max_missings_percent: float,
     ) -> dict:
         """Формирование набора данных для работы со всеми моделями кроме базовых и экспоненциальных"""
 
@@ -629,7 +638,7 @@ class Adjustmenter:
 
             idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
 
-            if len(idx_none_past) > (len(target) / 10.0):
+            if len(idx_none_past) > (len(target) * (max_missings_percent / 100.0)):
                 return {
                     "status": 0,
                     "x_train": [],
@@ -692,6 +701,7 @@ class Adjustmenter:
         predictor_data: dict,
         time_depth: str,
         time_forecast: str,
+        max_missings_percent: float,
     ) -> dict:
         """Получение наборов данных для работы с базовыми моделями (может быть только 1 предиктор)"""
 
@@ -750,7 +760,7 @@ class Adjustmenter:
 
         idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
 
-        if len(idx_none_past) > (len(target) / 10.0):
+        if len(idx_none_past) > (len(target) * (max_missings_percent / 100.0)):
             return {
                 "status": 0,
                 "x_train": [],
@@ -820,7 +830,7 @@ class Adjustmenter:
         predictor_data: dict,
     ) -> dict:
         # status = 1: все ОК
-        # status = 0: пропусктов > 10 %
+        # status = 0: пропусктов > заданное значение %
         # status = -1: не указаны предикторы
         # status = -2: предикторов более, чем 1
 
@@ -828,7 +838,9 @@ class Adjustmenter:
             idx for idx, val in enumerate(target) if (val is None) or (np.isnan(val))
         ]
 
-        if idx_target_none and len(idx_target_none) > len(target) / 10:
+        if idx_target_none and (
+            len(idx_target_none) > len(target) * (self.max_missings_percent / 100.0)
+        ):
             common_models_set = {
                 "status": 0,
                 "x_train": [],
@@ -865,6 +877,7 @@ class Adjustmenter:
                 predictor_data,
                 self.time_depth,
                 self.time_forecast,
+                self.max_missings_percent,
             )
 
             base_models = self._get_train_predict_sets_basemodels(
@@ -877,6 +890,7 @@ class Adjustmenter:
                 predictor_data,
                 self.time_depth,
                 self.time_forecast,
+                self.max_missings_percent,
             )
 
             exp_models = self._get_train_predict_sets_expmodels(
@@ -901,7 +915,8 @@ class Adjustmenter:
         def logging_err_status(model_type: str) -> None:
             if train_predict_sets[model_type]["status"] == 0:
                 logging.error(
-                    "Слишком много пропусков в обучающих данных (более 10 %). Пропуск обучения модели. Пропуск расчета прогноза на ней."
+                    "Слишком много пропусков в обучающих данных (более %.1f %%). Пропуск обучения модели. Пропуск расчета прогноза на ней.",
+                    self.max_missings_percent,
                 )
             elif train_predict_sets[model_type]["status"] == -1:
                 logging.error(
@@ -1553,9 +1568,6 @@ class Adjustmenter:
                             "om_data_local"
                         ]["past"][self.time_depth][-1]
 
-                    # TODO: если включен verbose, то записать в verbose-файл в формате JSON информацию о построенных прогнозах
-                    # (какие модели были использованы, какие гиперпараметры были заданы, R2 на тренировочных данных, процент скорректированных значений прогноза и т.д.)
-                    # 1 станция, 1 параметр - 1 файл с именем, например, "verbose_station{station_code}_par-{parameter_code}.json" в папке verbose_dir
                 else:
                     logging.info(
                         "Невозможно получить локальный прогноз для параметра %s (код: %s), т.к. отсутствуют предикторы",

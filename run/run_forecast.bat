@@ -38,12 +38,13 @@ echo Режим расчета: %MODE%
 echo Ключ отрисовки глобального прогноза: %ADD_GLOBFORECAST_PLOT%
 echo Период обучения: %TIME_DEPTH%
 echo Период прогноза: %TIME_FORECAST%
+echo Максимальное кол-во пропусков: %DATA_MISSINGS_PERCENT%
 echo Тип глобального прогноза: %FORECAST_TYPE%
 echo Текущая дата: %NOW_DATE%
 echo Конфигурационный файл: %CONFIG_FILE%
 
 echo Запуск расчета прогноза
 
-python ..\src\forecast\main.py --mode=%MODE% --add-globforecast-plot=%ADD_GLOBFORECAST_PLOT% --time-depth=%TIME_DEPTH% --time-forecast=%TIME_FORECAST% --forecast-type=%FORECAST_TYPE% --now-date=%NOW_DATE% --config=%CONFIG_FILE%
+python ..\src\forecast\main.py --mode=%MODE% --add-globforecast-plot=%ADD_GLOBFORECAST_PLOT% --time-depth=%TIME_DEPTH% --time-forecast=%TIME_FORECAST% --data-missings-percent=%DATA_MISSINGS_PERCENT% --forecast-type=%FORECAST_TYPE% --now-date=%NOW_DATE% --config=%CONFIG_FILE%
 
 pause

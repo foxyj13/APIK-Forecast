@@ -119,7 +119,7 @@ def init() -> dict:
     init_logging(log_folder)
     logging.info("Начинаем работу!")
 
-    logging.info("Проверка и корректировка заданных натроек")
+    logging.info("Проверка и корректировка заданных настроек")
     if main_args["mode"] == "qc":
         if not check_qc_case(main_args["case"]):
             logging.error(
@@ -209,6 +209,8 @@ def run_forecast(forecast_main_program: str, args: dict, now_date_str: str):
             args["forecast-args"]["time-depth"],
             "--time-forecast",
             args["forecast-args"]["time-forecast"],
+            "--data-missings-percent",
+            args["forecast-args"]["data-missings-percent"],
             "--forecast-type",
             args["forecast-args"]["forecast-type"],
             "--now-date",

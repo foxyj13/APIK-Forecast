@@ -60,6 +60,12 @@ def read_args():
         default="0d",
     )
     parser.add_argument(
+        "--data-missings-percent",
+        help="Maximum percent of missing values in train datasets (must be <= 90)",
+        type=str,
+        default="10",
+    )
+    parser.add_argument(
         "--forecast-type",
         help="Type of forecast: real-time or using historical data",
         type=str,
@@ -270,6 +276,7 @@ def main():
     mode = args.mode
     time_depth = args.time_depth
     time_forecast = args.time_forecast
+    max_missings_percent = float(args.data_missings_percent)
     add_globforecast_plot = args.add_globforecast_plot.lower() == "yes"
     now_date = datetime.datetime.strptime(args.now_date, "%Y-%m-%d").date()
 
@@ -317,6 +324,22 @@ def main():
         )
         logging.info("Остановка программы")
         sys.exit(1)
+
+    if max_missings_percent > 90.0:
+        max_missings_percent = 90.0
+        logging.warning(
+            "Задан слишком высокий допустимый процент пропусков в обучающих данных (> 90%). Заменено на 90."
+        )
+    elif max_missings_percent < 0.0:
+        max_missings_percent = 0.0
+        logging.warning(
+            "Задан отрицательный допустимый процент пропусков в обучающих данных (< 0%). Заменено на 0."
+        )
+    else:
+        logging.info(
+            "Заданное максимально допустимый процент пропусков в обучающих данных: %.1f",
+            max_missings_percent,
+        )
 
     if ((mode == "forec_adj") or (mode == "forec_stat")) and (time_forecast == "0d"):
         logging.error(
@@ -390,6 +413,7 @@ def main():
     data_log_json["args"]["add_globforecast_plot"] = add_globforecast_plot
     data_log_json["args"]["time_depth"] = time_depth
     data_log_json["args"]["time_forecast"] = time_forecast
+    data_log_json["args"]["max_missings_percent"] = max_missings_percent
     data_log_json["args"]["forecast_type"] = args.forecast_type
     data_log_json["args"]["now_date"] = str(now_date)
     data_log_json["args"]["config_file"] = args.config
@@ -436,6 +460,7 @@ def main():
             now_date=now_date,
             time_depth=time_depth,
             time_forecast=time_forecast,
+            max_missings_percent=max_missings_percent,
         )
 
         # ------------ Сохранение в словарь ml-конфигурации (после корректировок) ----------

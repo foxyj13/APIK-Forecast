@@ -43,9 +43,10 @@ echo "Режим расчета : ${MODE:-Не задан}"
 echo "Ключ отрисовки глобального прогноза : ${ADD_GLOBFORECAST_PLOT:-Не задан}"
 echo "Период обучения : ${TIME_DEPTH:-Не задан}"
 echo "Период прогноза : ${TIME_FORECAST:-Не задан}"
+echo "Максимальное кол-во пропусков : ${DATA_MISSINGS_PERCENT:-Не задан}"
 echo "Тип глобального прогноза : ${FORECAST_TYPE:-Не задан}"
 echo "Текущая дата : ${NOW_DATE:-Не задан}"
 echo "Конфигурационный файл : ${CONFIG_FILE:-Не задан}"
 echo "-----------------------------------"
 
-python ../src/forecast/main.py --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE
+python ../src/forecast/main.py --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --data-missings-percent=$DATA_MISSINGS_PERCENT --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE
