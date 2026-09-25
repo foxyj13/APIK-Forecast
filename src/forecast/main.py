@@ -385,7 +385,17 @@ def main():
             "Результат будет представлен в виде статичных и интерактивных графиков"
         )
     else:
-        logging.error("Отрисовка производиться не будет")
+        logging.error(
+            "Указан неверный режим отрисовки. Возможные варианты: static | interactive"
+        )
+
+    if (
+        mode == "obs_plot"
+        and time_forecast == "0d"
+        and plot_mode.lower() == "interactive"
+    ):
+        logging.info("Интерактивная отрисовка будет осуществлена для наблюдений")
+        main_config["html-plot-title"] = "Наблюдения"
 
     # ------------ Формирование имени pickle-файла для записи всей информации по работе программы ------------
     ml_verbose = main_config["ml-verbose"].lower() == "true"
@@ -519,35 +529,42 @@ def main():
             )
 
             if om_reader.connect():
-                logging.info("Считываем глобальные прогнозы")
+                if (mode == "forec_adj") or (
+                    mode == "obs_plot" and add_globforecast_plot
+                ):
+                    logging.info("Считываем глобальные прогнозы")
+                else:
+                    logging.error("Глобальный прогноз не используется")
 
                 # ------------ Чтение глобальных прогнозов ------------
                 for station in stations:
                     status = False
 
-                    if mode == "forec_adj":
+                    if (mode == "forec_adj") or (
+                        mode == "obs_plot" and add_globforecast_plot
+                    ):
                         status, station = om_reader.get_model_data(
                             station=station,
                             time_depth=time_depth,
                             time_forecast=time_forecast,
                         )
 
-                    if (mode == "forec_stat") or ((not status) and (not hist_forecast)):
-                        logging.error("Глобальный прогноз не используется")
+                    if mode == "forec_stat":
+                        # logging.error("Глобальный прогноз не используется")
                         status, station = db_reader.get_station_predictors(
                             station=station,
                             time_depth=time_depth,
                             time_forecast=time_forecast,
                         )
 
-                        if not status:
-                            logging.error(
-                                "Не получены предикторы для статистического прогноза для станции [%s] %s",
-                                station["code"],
-                                station["full_name"],
-                            )
+                        # if not status:
+                        #     logging.error(
+                        #         "Не получены предикторы для статистического прогноза для станции [%s] %s",
+                        #         station["code"],
+                        #         station["full_name"],
+                        #     )
 
-                    if (not status) and hist_forecast:
+                    if not status:
                         logging.error(
                             "Не получены предикторы для прогноза для станции [%s] %s",
                             station["code"],
@@ -601,21 +618,22 @@ def main():
                         str_now_date=str(now_date),
                     )
 
-                if (plot_mode == "static") or (plot_mode == "interactive"):
-                    # Построение статичных графиков
-                    for station in stations:
-                        plotter.make_table_forecast(
-                            station=station, time_depth=time_depth
-                        )
-                        plotter.make_plots_forecast(
-                            station=station,
-                            time_depth=time_depth,
-                            time_forecast=time_forecast,
-                        )
+                # if (plot_mode == "static") or (plot_mode == "interactive"):
+                # Построение статичных графиков
+                for station in stations:
+                    plotter.make_table_forecast(station=station, time_depth=time_depth)
+                    plotter.make_plots_forecast(
+                        station=station,
+                        time_depth=time_depth,
+                        time_forecast=time_forecast,
+                    )
 
                 if plot_mode == "interactive":
+                    # if (plot_mode == "interactive") and (
+                    #     (mode == "forec_adj") or (mode == "forec_stat")
+                    # ):
                     # Построение интерактивных графиков
-                    # Выбор перерменных для отрисовки:
+                    # Выбор переменных для отрисовки:
                     #   если указаны в config.ini, то берем их; иначе все, что есть в наличие
                     if main_config.get("variables", ""):
                         variables = list(
@@ -642,17 +660,18 @@ def main():
                         )
                         plotter_js.make_plots(variables=variables)
 
-                # Получение информации о расчетах (модели, их настройки, промежуточные оценки и все результаты)
-                for station in stations:
-                    station_info = get_station_info(
-                        station, time_depth, time_forecast, ml_adjust
-                    )
-                    data_log_json["stations"].append(station_info)
+                if (mode == "forec_adj") or (mode == "forec_stat"):
+                    # Получение информации о расчетах (модели, их настройки, промежуточные оценки и все результаты)
+                    for station in stations:
+                        station_info = get_station_info(
+                            station, time_depth, time_forecast, ml_adjust
+                        )
+                        data_log_json["stations"].append(station_info)
 
-                # Вывод data_log_json в pickle-файл
-                if ml_verbose:
-                    with open(fname_pkl, "wb") as f_pkl:
-                        pickle.dump(data_log_json, f_pkl)
+                    # Вывод data_log_json в pickle-файл
+                    if ml_verbose:
+                        with open(fname_pkl, "wb") as f_pkl:
+                            pickle.dump(data_log_json, f_pkl)
 
             else:
                 logging.error("Не удалось получить глобальные прогнозы!")

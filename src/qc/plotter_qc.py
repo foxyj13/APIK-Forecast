@@ -35,6 +35,7 @@ class PlotterQC:
         self.time_depth = args["forecast-args"]["time-depth"]
         self.time_forecast = args["forecast-args"]["time-forecast"]
         self.forecast_type = args["forecast-args"]["forecast-type"]
+        self.forecast_mode = args["forecast-args"]["mode"]
 
         self.exp_name = args["data-args"]["experiment-name"]
 
@@ -465,7 +466,10 @@ class PlotterQC:
                 # self._plot_par(par_name, par_info, station_info, past=True, glob=False)
 
                 # (3)  Отрисовка local + global (если есть), но только future
-                self._plot_par(par_name, par_info, station_info, past=False, glob=True)
+                if self.forecast_mode == "forec_adj":
+                    self._plot_par(
+                        par_name, par_info, station_info, past=False, glob=True
+                    )
 
                 # (4) Отрисовка local + global (если есть) для past + future
                 # self._plot_par(par_name, par_info, station_info, past=True, glob=True)

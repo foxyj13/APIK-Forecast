@@ -137,29 +137,40 @@ class PlotterJS:
                         y_data = parameter["data"][self._time_depth]
                     else:
                         # Будет отрисовка локальных прогнозов, если они есть
-                        if (
-                            (self._time_depth in station["om_time_past"])
-                            and (self._time_forecast in station["om_time_future"])
-                        ) and (
+                        # if (
+                        #     (self._time_depth in station["om_time_past"])
+                        #     and (self._time_forecast in station["om_time_future"])
+                        # ) and (
+                        #     ("om_data_local" in parameter)
+                        #     and (
+                        #         (self._time_depth in parameter["om_data_local"]["past"])
+                        #         and (
+                        #             self._time_forecast
+                        #             in parameter["om_data_local"]["future"]
+                        #         )
+                        #     )
+                        # ):
+                        # x_data = (
+                        #     station["om_time_past"][self._time_depth]
+                        #     + station["om_time_future"][self._time_forecast][1:]
+                        # )
+                        # y_data = (
+                        #     parameter["om_data_local"]["past"][self._time_depth]
+                        #     + parameter["om_data_local"]["future"][
+                        #         self._time_forecast
+                        #     ][1:]
+                        # )
+                        if (self._time_forecast in station["om_time_future"]) and (
                             ("om_data_local" in parameter)
                             and (
-                                (self._time_depth in parameter["om_data_local"]["past"])
-                                and (
-                                    self._time_forecast
-                                    in parameter["om_data_local"]["future"]
-                                )
+                                self._time_forecast
+                                in parameter["om_data_local"]["future"]
                             )
                         ):
-                            x_data = (
-                                station["om_time_past"][self._time_depth]
-                                + station["om_time_future"][self._time_forecast][1:]
-                            )
-                            y_data = (
-                                parameter["om_data_local"]["past"][self._time_depth]
-                                + parameter["om_data_local"]["future"][
-                                    self._time_forecast
-                                ][1:]
-                            )
+                            x_data = station["om_time_future"][self._time_forecast]
+                            y_data = parameter["om_data_local"]["future"][
+                                self._time_forecast
+                            ]
                         else:
                             x_data = []
                             y_data = []

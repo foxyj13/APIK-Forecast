@@ -638,7 +638,9 @@ class Adjustmenter:
 
             idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
 
-            if len(idx_none_past) > (len(target) * (max_missings_percent / 100.0)):
+            if (
+                len(idx_none_past) > (len(target) * (max_missings_percent / 100.0))
+            ) or (len(idx_predictor_future_none) == len(predictor_future)):
                 return {
                     "status": 0,
                     "x_train": [],
@@ -760,7 +762,9 @@ class Adjustmenter:
 
         idx_none_past = set(idx_target_none) | set(idx_predictor_past_none)
 
-        if len(idx_none_past) > (len(target) * (max_missings_percent / 100.0)):
+        if (len(idx_none_past) > (len(target) * (max_missings_percent / 100.0))) or (
+            len(idx_predictor_future_none) == len(predictor_future)
+        ):
             return {
                 "status": 0,
                 "x_train": [],
@@ -804,19 +808,28 @@ class Adjustmenter:
 
     @staticmethod
     def _get_train_predict_sets_expmodels(
-        len_past: int, len_future: int, obs: list, idx_none: list
+        len_past: int,
+        len_future: int,
+        obs: list,
+        idx_none: list,
+        max_missings_percent: float,
     ) -> dict:
         """Получение обучающего ряда для экспоненциальных моделей (сам ряд наблюдений является предиктором)"""
 
         if idx_none:
-            # Заполнить None
-            obs_series = pd.Series(obs, dtype=float)
-            filled_obs_series = obs_series.interpolate(method="linear").ffill().bfill()
-            return {
-                "status": 1,
-                "train": filled_obs_series.tolist(),
-                "len_future": len_future,
-            }
+            if len(idx_none) > len(obs) * (max_missings_percent / 100.0):
+                return {"status": 0, "train": [], "len_future": 0}
+            else:
+                # Заполнить None
+                obs_series = pd.Series(obs, dtype=float)
+                filled_obs_series = (
+                    obs_series.interpolate(method="linear").ffill().bfill()
+                )
+                return {
+                    "status": 1,
+                    "train": filled_obs_series.tolist(),
+                    "len_future": len_future,
+                }
         else:
             return {"status": 1, "train": obs, "len_future": len_future}
 
@@ -894,7 +907,11 @@ class Adjustmenter:
             )
 
             exp_models = self._get_train_predict_sets_expmodels(
-                len_past, len_future, target, idx_target_none
+                len_past,
+                len_future,
+                target,
+                idx_target_none,
+                self.max_missings_percent,
             )
 
             prepared_sets = {
@@ -1376,7 +1393,7 @@ class Adjustmenter:
                     sys.exit(1)
         else:
             logging.error(
-                "Не удалось построить прогноз ни с одной из моделей машинного обучения. Будет возвращен прогноз без коррекции (т.е. глобальный прогноз)."
+                "Не удалось построить прогноз ни с одной из моделей машинного обучения."
             )
             y_past_predict = []  # x_past_predict
             y_future_predict = []  # x_future_predict
