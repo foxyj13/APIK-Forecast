@@ -570,7 +570,7 @@ class Plotter:
 
             # Отрисовка наблюдений
             y_obs = parameter["data"][time_depth]
-            if y_obs.count(None) != len(y_obs) and ~np.isnan(y_obs).all():
+            if y_obs.count(None) != len(y_obs):  # and ~np.isnan(y_obs).all():
                 ax.plot(x_obs, y_obs, **self.obs_plot_kwargs)
 
             # Добавление локального (скорректированного) прогноза
@@ -686,9 +686,20 @@ class Plotter:
             out_filename = f"{self.experiment_name}_{station['code']}_{parameter['code']}_{self.str_now_date}_td{time_depth}_tf{time_forecast}{suffix_floc}{suffix_fglob}.png"
             out_filename = os.path.join(self._config["images-folder"], out_filename)
 
+            cp_out_filename = f"{station['code']}_{parameter['code']}_forecast.png"
+            cp_out_filename = os.path.join(
+                self._config["images-folder"], cp_out_filename
+            )
+
             fig = plt.gcf()
             plt.savefig(
                 out_filename,
+                edgecolor=fig.get_edgecolor(),
+                facecolor=fig.get_facecolor(),
+                dpi=150,
+            )
+            plt.savefig(
+                cp_out_filename,
                 edgecolor=fig.get_edgecolor(),
                 facecolor=fig.get_facecolor(),
                 dpi=150,
