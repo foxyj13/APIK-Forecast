@@ -123,23 +123,59 @@ class DBReader:
                             # Считаем сумму элементов, попавших в этот диапазон индексов
                             # Если в интервале (T - 1 час, T] данных нет (например, в кейсе с редкой записью),
                             # то idx_start и idx_end совпадут, срез вернет пустой список, а функция sum() вернет 0.0
-                            hourly_sum = sum(data_orig[idx_start:idx_end])
+                            sub_data_orig = [
+                                x for x in data_orig[idx_start:idx_end] if x is not None
+                            ]
+                            if sub_data_orig:
+                                hourly_sum = float(sum(sub_data_orig))
+                            else:
+                                hourly_sum = None
 
-                            to_hourly.append(float(hourly_sum))
+                            to_hourly.append(hourly_sum)
                         par_info["data"][td_val] = to_hourly
 
                     else:
-                        to_hourly = interpolate.interp1d(
-                            x=timeline_timestamp_orig,
-                            y=data_orig,
-                            kind="nearest",
-                            bounds_error=False,
-                            fill_value=np.nan,
-                            assume_sorted=True,
-                        )
-                        par_info["data"][td_val] = list(
-                            to_hourly(td_timeline_timestamp_ref)
-                        )
+                        # Для остальных параметров используем ближайшее значение в интервале получаса до и после от отметки времени
+
+                        # to_hourly = interpolate.interp1d(
+                        #     x=timeline_timestamp_orig,
+                        #     y=data_orig,
+                        #     kind="nearest",
+                        #     bounds_error=False,
+                        #     fill_value=np.nan,
+                        #     assume_sorted=True,
+                        # )
+                        # par_info["data"][td_val] = list(
+                        #     to_hourly(td_timeline_timestamp_ref)
+                        # )
+
+                        for t in timeline_ref:
+                            start_time = t - datetime.timedelta(minutes=29)
+                            end_time = t + datetime.timedelta(minutes=30)
+
+                            idx_start = bisect_right(timeline_orig, start_time)
+                            idx_end = bisect_right(timeline_orig, end_time)
+
+                            sub_data_orig = data_orig[idx_start:idx_end]
+
+                            if sub_data_orig:
+                                sub_timeline_orig = [
+                                    timeline_orig[idx]
+                                    for idx in range(idx_start, idx_end)
+                                ]
+                                diff_timeline = [abs(x - t) for x in sub_timeline_orig]
+
+                                min_idx = diff_timeline.index(min(diff_timeline))
+
+                                hourly_data = float(sub_data_orig[min_idx])
+
+                                # print(f"{t}: ({start_t}, {end_t}]: {sub_timeline_orig}")
+                            else:
+                                hourly_data = None
+
+                            to_hourly.append(hourly_data)
+
+                        par_info["data"][time_depth] = to_hourly
 
             return timelines, parameters
 
@@ -442,9 +478,10 @@ class DBReader:
             for par_name, par_info in parameters.items():
                 data_orig = par_info["data"][time_depth]
 
+                to_hourly = []
+
                 if par_name == "prc":
                     # Для осадков используем накопление (сумму) за предыдущий час, а не ближайшее значение
-                    to_hourly = []
                     for t in timeline_ref:
                         start_time = t - datetime.timedelta(hours=1)
                         end_time = t
@@ -457,23 +494,58 @@ class DBReader:
                         # Считаем сумму элементов, попавших в этот диапазон индексов
                         # Если в интервале (T - 1 час, T] данных нет (например, в кейсе с редкой записью),
                         # то idx_start и idx_end совпадут, срез вернет пустой список, а функция sum() вернет 0.0
-                        hourly_sum = sum(data_orig[idx_start:idx_end])
+                        sub_data_orig = [
+                            x for x in data_orig[idx_start:idx_end] if x is not None
+                        ]
+                        if sub_data_orig:
+                            hourly_sum = float(sum(sub_data_orig))
+                        else:
+                            hourly_sum = None
 
-                        to_hourly.append(float(hourly_sum))
+                        to_hourly.append(hourly_sum)
                     par_info["data"][time_depth] = to_hourly
 
                 else:
-                    to_hourly = interpolate.interp1d(
-                        x=timeline_timestamp_orig,
-                        y=data_orig,
-                        kind="nearest",
-                        bounds_error=False,
-                        fill_value=np.nan,
-                        assume_sorted=True,
-                    )
-                    par_info["data"][time_depth] = list(
-                        to_hourly(timeline_timestamp_ref)
-                    )
+                    # Для остальных параметров используем ближайшее значение в интервале получаса до и после от отметки времени
+
+                    # to_hourly = interpolate.interp1d(
+                    #     x=timeline_timestamp_orig,
+                    #     y=data_orig,
+                    #     kind="nearest",
+                    #     bounds_error=False,
+                    #     fill_value=np.nan,
+                    #     assume_sorted=True,
+                    # )
+                    # par_info["data"][time_depth] = list(
+                    #     to_hourly(timeline_timestamp_ref)
+                    # )
+
+                    for t in timeline_ref:
+                        start_time = t - datetime.timedelta(minutes=29)
+                        end_time = t + datetime.timedelta(minutes=30)
+
+                        idx_start = bisect_right(timeline_orig, start_time)
+                        idx_end = bisect_right(timeline_orig, end_time)
+
+                        sub_data_orig = data_orig[idx_start:idx_end]
+
+                        if sub_data_orig:
+                            sub_timeline_orig = [
+                                timeline_orig[idx] for idx in range(idx_start, idx_end)
+                            ]
+                            diff_timeline = [abs(x - t) for x in sub_timeline_orig]
+
+                            min_idx = diff_timeline.index(min(diff_timeline))
+
+                            hourly_data = float(sub_data_orig[min_idx])
+
+                            # print(f"{t}: ({start_t}, {end_t}]: {sub_timeline_orig}")
+                        else:
+                            hourly_data = None
+
+                        to_hourly.append(hourly_data)
+
+                    par_info["data"][time_depth] = to_hourly
 
             return timelines, parameters
 
@@ -661,22 +733,57 @@ class DBReader:
                         # Считаем сумму элементов, попавших в этот диапазон индексов
                         # Если в интервале (T - 1 час, T] данных нет (например, в кейсе с редкой записью),
                         # то idx_start и idx_end совпадут, срез вернет пустой список, а функция sum() вернет 0.0
-                        hourly_sum = sum(data_orig[idx_start:idx_end])
+                        sub_data_orig = [
+                            x for x in data_orig[idx_start:idx_end] if x is not None
+                        ]
+                        if sub_data_orig:
+                            hourly_sum = float(sum(sub_data_orig))
+                        else:
+                            hourly_sum = None
 
-                        to_hourly.append(float(hourly_sum))
+                        to_hourly.append(hourly_sum)
                     par_info[past_type][time_depth] = to_hourly
                 else:
-                    to_hourly = interpolate.interp1d(
-                        x=timeline_timestamp_orig,
-                        y=data_orig,
-                        kind="nearest",
-                        bounds_error=False,
-                        fill_value=np.nan,
-                        assume_sorted=True,
-                    )
-                    par_info[past_type][time_depth] = list(
-                        to_hourly(timeline_timestamp_ref)
-                    )
+                    # Для остальных параметров используем ближайшее значение в интервале получаса до и после от отметки времени
+
+                    # to_hourly = interpolate.interp1d(
+                    #     x=timeline_timestamp_orig,
+                    #     y=data_orig,
+                    #     kind="nearest",
+                    #     bounds_error=False,
+                    #     fill_value=np.nan,
+                    #     assume_sorted=True,
+                    # )
+                    # par_info[past_type][time_depth] = list(
+                    #     to_hourly(timeline_timestamp_ref)
+                    # )
+
+                    for t in timeline_ref:
+                        start_time = t - datetime.timedelta(minutes=29)
+                        end_time = t + datetime.timedelta(minutes=30)
+
+                        idx_start = bisect_right(timeline_orig, start_time)
+                        idx_end = bisect_right(timeline_orig, end_time)
+
+                        sub_data_orig = data_orig[idx_start:idx_end]
+
+                        if sub_data_orig:
+                            sub_timeline_orig = [
+                                timeline_orig[idx] for idx in range(idx_start, idx_end)
+                            ]
+                            diff_timeline = [abs(x - t) for x in sub_timeline_orig]
+
+                            min_idx = diff_timeline.index(min(diff_timeline))
+
+                            hourly_data = float(sub_data_orig[min_idx])
+
+                            # print(f"{t}: ({start_t}, {end_t}]: {sub_timeline_orig}")
+                        else:
+                            hourly_data = None
+
+                        to_hourly.append(hourly_data)
+
+                    par_info["data"][time_depth] = to_hourly
 
             return timelines, parameters
 
