@@ -47,6 +47,8 @@ ml-info-folder=export_ml
 plot_mode=static
 #plot_mode=interactive
 images-bw=False
+plot-for-web=True
+plot-for-research=True
 
 # Список метео=параметров для интерактивного отображения (plot_mode=interactive)
 #variables=ta, rh, pres, prc, ts0

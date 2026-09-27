@@ -17,6 +17,10 @@ class Plotter:
         self.export_enabled = config.get("export-enable", "false").lower() == "true"
         # self.export_enabled = config.getboolean("export-enable")
         # self.export_folder = config.get('csv-folder')
+        self.plot_for_web = config.get("plot-for-web", "false").lower() == "true"
+        self.plot_for_research = (
+            config.get("plot-for-research", "false").lower() == "true"
+        )
 
         self.glob_forecast = glob_forecast
         self.local_forecast = local_forecast
@@ -259,8 +263,6 @@ class Plotter:
 
         title_text = station["full_name"]
         fig_border = "steelblue"
-        out_filename = f"{self.experiment_name}_{station['code']}_table_{self.str_now_date}_{self._config['recent-table-suffix']}.png"
-        out_filename = os.path.join(self._config["images-folder"], out_filename)
 
         recent_idx = self._get_recent_idx(station["parameters"], time_depth)
 
@@ -384,12 +386,33 @@ class Plotter:
         plt.draw()
         # Create image. plt.savefig ignores figure edge and face colors, so map them.
         fig = plt.gcf()
-        plt.savefig(
-            out_filename,
-            edgecolor=fig.get_edgecolor(),
-            facecolor=fig.get_facecolor(),
-            dpi=150,
-        )
+
+        if self.plot_for_research:
+            out_filename = f"{self.experiment_name}_{station['code']}_table_{self.str_now_date}_{self._config['recent-table-suffix']}.png"
+            out_filename = os.path.join(self._config["images-folder"], out_filename)
+
+            plt.savefig(
+                out_filename,
+                edgecolor=fig.get_edgecolor(),
+                facecolor=fig.get_facecolor(),
+                dpi=150,
+            )
+
+        if self.plot_for_web:
+            cp_out_filename = (
+                f"{station['code']}_table_{self._config['recent-table-suffix']}.png"
+            )
+            cp_out_filename = os.path.join(
+                self._config["images-folder"], cp_out_filename
+            )
+
+            plt.savefig(
+                out_filename,
+                edgecolor=fig.get_edgecolor(),
+                facecolor=fig.get_facecolor(),
+                dpi=150,
+            )
+
         plt.close(fig)
 
         plt.ion()
@@ -682,28 +705,32 @@ class Plotter:
                 weight="light",
             )
 
-            # Сохранение в файл .png
-            out_filename = f"{self.experiment_name}_{station['code']}_{parameter['code']}_{self.str_now_date}_td{time_depth}_tf{time_forecast}{suffix_floc}{suffix_fglob}.png"
-            out_filename = os.path.join(self._config["images-folder"], out_filename)
-
-            cp_out_filename = f"{station['code']}_{parameter['code']}_forecast.png"
-            cp_out_filename = os.path.join(
-                self._config["images-folder"], cp_out_filename
-            )
-
             fig = plt.gcf()
-            plt.savefig(
-                out_filename,
-                edgecolor=fig.get_edgecolor(),
-                facecolor=fig.get_facecolor(),
-                dpi=150,
-            )
-            plt.savefig(
-                cp_out_filename,
-                edgecolor=fig.get_edgecolor(),
-                facecolor=fig.get_facecolor(),
-                dpi=150,
-            )
+
+            # Сохранение в файл .png
+            if self.plot_for_research:
+                out_filename = f"{self.experiment_name}_{station['code']}_{parameter['code']}_{self.str_now_date}_td{time_depth}_tf{time_forecast}{suffix_floc}{suffix_fglob}.png"
+                out_filename = os.path.join(self._config["images-folder"], out_filename)
+
+                plt.savefig(
+                    out_filename,
+                    edgecolor=fig.get_edgecolor(),
+                    facecolor=fig.get_facecolor(),
+                    dpi=150,
+                )
+
+            if self.plot_for_web:
+                cp_out_filename = f"{station['code']}_{parameter['code']}_forecast.png"
+                cp_out_filename = os.path.join(
+                    self._config["images-folder"], cp_out_filename
+                )
+
+                plt.savefig(
+                    cp_out_filename,
+                    edgecolor=fig.get_edgecolor(),
+                    facecolor=fig.get_facecolor(),
+                    dpi=150,
+                )
             plt.close(fig)
 
         plt.ion()
