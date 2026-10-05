@@ -260,6 +260,87 @@ def get_station_info(
     return st_info
 
 
+#   <код-станции>_<код-параметра>_forecast_info.js
+def write_js_station_parameter_forecast_info(
+    station_info: dict,
+    time_depth: str,
+    time_forecast: str,
+    js_outdir: str,
+    ml_config: dict,
+) -> None:
+    logging.info("Формирование json-файлов для сопровождения рисунка для web")
+
+    js_header = "window.__FORECAST_INFO__ = "
+
+    for par_name, par_info in station_info["parameters"].items():
+        output_file = f"{station_info['code']}_{par_info['code']}_forecast_info.js"
+        output_file = os.path.join(js_outdir, output_file)
+
+        # Собрать строку
+        par_str = f"Станция: {station_info['code']} - {station_info['full_name']} ({station_info['lat']:.2f} с.ш., {station_info['lon']:.2f} в.д.)"
+        par_str = f"{par_str}\nМетеопараметр: [{par_name}] {par_info['full_name']} (код {par_info['code']})\n"
+
+        if (
+            "prepast" in station_info["timeline"]
+            and station_info["timeline"]["prepast"]
+        ):
+            par_str = f"{par_str}\nСтатистический прогноз"
+            predictors = "db_predictors"
+        else:
+            par_str = f"{par_str}\nУточнение глобального прогноза"
+            if ("om_parameter" in par_info) and par_info["om_parameter"]:
+                par_str = (
+                    f"{par_str}\nСоответствие с Open-Meteo: {par_info['om_parameter']}"
+                )
+            else:
+                par_str = f"{par_str}\nСоответствие с Open-Meteo: -"
+
+            predictors = "om_predictors"
+        par_str = f"{par_str}\nПредикторы: {', '.join(par_info[predictors])}"
+        par_str = f"{par_str}\nПериод обучения: {time_depth[:-1]} д."
+        par_str = f"{par_str}\nПериод прогноза: {time_forecast[:-1]} д.\n"
+
+        par_str = f"{par_str}\nML-модели: {', '.join(list(par_info['models'].keys()))}"
+        models_cfg = {
+            model: f"{model}({model_info['model_cfg']['cfg_type']}: {model_info['model_cfg']['cfg_pars']})"
+            for model, model_info in par_info["models"].items()
+            if ("model_cfg" in model_info) and ("cfg_pars" in model_info["model_cfg"])
+        }
+        max_len = max([len(model_str) for model, model_str in models_cfg.items()])
+        for model, model_str in models_cfg.items():
+            train_metrics = par_info["models"][model]["train_metrics"]
+            par_str = f"{par_str}\n[{model_str}]: {' ' * (max_len - len(model_str))}R2 = {train_metrics['r2']:.6f}, RMSE = {train_metrics['rmse']:.6f}, MAE = {train_metrics['mae']:.6f}"
+
+        if len(models_cfg) > 1:
+            if par_info["chosen_model"] == "mean":
+                par_str = f"{par_str}\nОбработка: расчет среднего по всем моделям"
+            else:
+                ml_config_par = ml_config.get(par_name, ml_config["default"])
+                par_str = f"{par_str}\nОбработка: выбор лучше по {ml_config_par['best-result-metrics'].upper()} на обучающем периоде: [{par_info['chosen_model']['model']}]"
+
+        # Станция: 50000028 - Аршан (51.91 с.ш., 102.43 в.д.)
+        # Метеопараметр: ta - <Сокращенное название> (код 4402)
+
+        # Уточнение глобального прогноза / Статистический прогноз
+        # Соответствие с Open-Meteo: <om_parameter> / _ничего_
+        # Предикторы: <список предикторов>
+        # Период обучения: <x> д.
+        # Период прогноза: <Y> д.
+
+        # ML-модели: LinearRegression, GradientBoostingRegressor, ExponentialSmoothing
+        # Гиперпараметры: стандартные / пользовательские {...} / GridSearch best_model <модель1>({...}); <модель2>({...}); ...
+        # [LinearRegression]:          R2 = 0.816705; RMSE = 2.241028; MAE = 1.756454
+        # [GradientBoostingRegressor]: R2 = 0.925813; RMSE = 1.425723; MAE = 1.119272
+        # [ExponentialSmoothing]:      R2 = 0.933309; RMSE = 1.351775; MAE = 0.921010
+        # Обработка: выбор лучшей по <R2> на обучающем периоде / расчет среднего по всем моделям
+
+        # Соединить строку с header
+        out_js_str = f"{js_header}`{par_str}`;"
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(out_js_str)
+
+
 def main():
     # Словарь для хранения информации для последующей выгрузки в JSON-файл
     data_log_json = {}
@@ -668,6 +749,17 @@ def main():
                         )
                         data_log_json["stations"].append(station_info)
 
+                        if main_config.get("plot-for-web", "false").lower() == "true":
+                            # Формирование json-файла для сопровождения рисунка для web:
+                            #   <код-станции>_<код-параметра>_forecast_info.js
+                            write_js_station_parameter_forecast_info(
+                                station_info,
+                                time_depth,
+                                time_forecast,
+                                main_config["images-folder"],
+                                ml_adjust.get_config(),
+                            )
+
                     # Вывод data_log_json в pickle-файл
                     if ml_verbose:
                         with open(fname_pkl, "wb") as f_pkl:
@@ -682,41 +774,6 @@ def main():
                 mode,
                 str(add_globforecast_plot),
             )
-            # # ------------ Отрисовка только наблюдений ------------
-            # if (plot_mode == "static") or (plot_mode == "interactive"):
-            #     logging.info("Строим статичные графики для наблюдений")
-
-            #     plotter = Plotter(dict(main_config))
-
-            #     for station in stations:
-            #         plotter.make_table(station=station)
-            #         plotter.make_plots(station=station, time_depth=time_depth)
-
-            # if plot_mode == "interactive":
-            #     # Построение интерактивных графиков
-            #     # Выбор перерменных для отрисовки:
-            #     #   если указаны в config.ini, то берем их; иначе все, что есть в наличие
-            #     if main_config.get("variables", ""):
-            #         variables = list(
-            #             map(str.strip, main_config["variables"].split(","))
-            #         )
-            #     else:
-            #         all_variables_names = set()
-            #         for station in stations:
-            #             all_variables_names.update(set(station["parameters"].keys()))
-            #         variables = list(all_variables_names)
-
-            #     if stations:
-            #         # Отрисовка данных
-            #         logging.info(
-            #             "Строим дополнительно интерактивные графики для наблюдений"
-            #         )
-            #         plotter_js = PlotterJS(
-            #             config=dict(main_config),
-            #             stations=stations,
-            #             time_depth=time_depth,
-            #         )
-            #         plotter_js.make_plots(variables=variables)
 
     logging.info("Заканчиваем работу")
 
