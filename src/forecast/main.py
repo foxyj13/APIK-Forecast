@@ -107,6 +107,12 @@ def init_logging(config):
         ],
     )
 
+    # Влючаем перехват всех Warnings в логгер
+    logging.captureWarnings(True)
+
+    # Теперь все предупреждения автоматически отправляются в логгер с именем "py.warnings"
+    # и гарантированно попадут в "meteo.log" через root-логгер.
+
 
 def read_stations(stations_file: str) -> list:
     wb = openpyxl.open(stations_file)
