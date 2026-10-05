@@ -527,7 +527,10 @@ class DBReader:
                         idx_start = bisect_right(timeline_orig, start_time)
                         idx_end = bisect_right(timeline_orig, end_time)
 
-                        sub_data_orig = data_orig[idx_start:idx_end]
+                        # sub_data_orig = data_orig[idx_start:idx_end]
+                        sub_data_orig = [
+                            x for x in data_orig[idx_start:idx_end] if x is not None
+                        ]
 
                         if sub_data_orig:
                             sub_timeline_orig = [
