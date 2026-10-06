@@ -12,15 +12,15 @@ class PlotterQC:
     def __init__(
         self,
         args: dict,
-        now_dates_forec_obs: dict[str, str],
+        now_dates: list[str],
         data: dict,
         # in_data: dict,
         # timelines: dict,
     ):
 
         self.args = args
-        self.now_dates_forec_obs = now_dates_forec_obs
-        self.now_dates = sorted(list(now_dates_forec_obs.keys()))
+        # self.now_dates_forec_obs = now_dates_forec_obs
+        self.now_dates = sorted(now_dates)
         self.data = data
         # self.in_data = in_data
         # self.timelines = timelines

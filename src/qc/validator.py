@@ -197,191 +197,58 @@ class Validator:
 
         return result
 
-    def get_metrics(self, station_now: dict, station_next: dict) -> dict:
+    def get_metrics(self, obs_data: dict, local_data: dict, glob_data: dict) -> dict:
+        metrics = {
+            "obs": {"past": {}, "future": {}},
+            "local": {"past": {}, "future": {}},
+            "global": {"past": {}, "future": {}},
+        }
 
-        def _get_obs_future_idx(
-            now_timeline_future: list, next_timeline_past: list
-        ) -> tuple:
-            idx_start = next_timeline_past.index(now_timeline_future[0])
-            idx_end = next_timeline_past.index(now_timeline_future[-1])
+        # Расчет метрик для наблюдений
+        if obs_data["past"]:
+            metrics["obs"]["past"] = self._get_self_metrics(obs_data["past"])
 
-            return idx_start, idx_end
+        if obs_data["future"]:
+            metrics["obs"]["future"] = self._get_self_metrics(obs_data["future"])
 
-        logging.info(
-            "Расчет метрик для станции %s (%s)",
-            station_now["code"],
-            station_now["full_name"],
-        )
-
-        obs_future_start, obs_future_end = _get_obs_future_idx(
-            station_now["timeline"]["future"][self.time_forecast],
-            station_next["timeline"]["past"][self.time_depth],
-        )
-
-        metrics = {}
-
-        for par_name, parameter in station_now["parameters"].items():
-            logging.info("[%s]", par_name)
-
-            metrics[par_name] = {}
-            metrics[par_name]["obs"] = {}
-            metrics[par_name]["local"] = {}
-            metrics[par_name]["global"] = {}
-
-            # parameter["metrics"] = {}
-
-            # Расчет метрик для наблюдений
-            if ("data" in parameter) and (parameter["data"][self.time_depth]):
-                metrics[par_name]["obs"]["past"] = self._get_self_metrics(
-                    parameter["data"][self.time_depth]
+        # Расчет метрик для локального прогноза
+        if local_data["past"]:
+            metrics["local"]["past"] = self._get_self_metrics(local_data["past"])
+            if obs_data["past"]:
+                metrics["local"]["past"].update(
+                    self._get_mutual_metrics(obs_data["past"], local_data["past"])
                 )
 
-                metrics[par_name]["obs"]["future"] = self._get_self_metrics(
-                    station_next["parameters"][par_name]["data"][self.time_depth][
-                        obs_future_start : obs_future_end + 1
-                    ]
+        if local_data["future"]:
+            metrics["local"]["future"] = self._get_self_metrics(local_data["future"])
+            if obs_data["future"]:
+                metrics["local"]["future"].update(
+                    self._get_mutual_metrics(obs_data["future"], local_data["future"])
+                )
+                metrics["local"]["future"].update(
+                    self._get_mutual_daily_metrics(
+                        obs_data["future"], local_data["future"]
+                    )
                 )
 
-                # Расчет метрик для локального прогноза
-                if "data_local" in parameter:
-                    if ("past" in parameter["data_local"]) and (
-                        parameter["data_local"]["past"][self.time_depth]
-                    ):
-                        metrics[par_name]["local"]["past"] = self._get_self_metrics(
-                            parameter["data_local"]["past"][self.time_depth]
-                        )
+        # Расчет метрик для глобального прогноза
+        if glob_data["past"]:
+            metrics["global"]["past"] = self._get_self_metrics(glob_data["past"])
+            if obs_data["past"]:
+                metrics["global"]["past"].update(
+                    self._get_mutual_metrics(obs_data["past"], glob_data["past"])
+                )
 
-                        metrics[par_name]["local"]["past"].update(
-                            self._get_mutual_metrics(
-                                parameter["data"][self.time_depth],
-                                parameter["data_local"]["past"][self.time_depth],
-                            )
-                        )
-                    else:
-                        metrics[par_name]["local"]["past"] = {}
+        if glob_data["future"]:
+            metrics["global"]["future"] = self._get_self_metrics(glob_data["future"])
+            if obs_data["future"]:
+                metrics["global"]["future"].update(
+                    self._get_mutual_metrics(obs_data["future"], glob_data["future"])
+                )
+                metrics["global"]["future"].update(
+                    self._get_mutual_daily_metrics(
+                        obs_data["future"], glob_data["future"]
+                    )
+                )
 
-                    if ("future" in parameter["data_local"]) and (
-                        parameter["data_local"]["future"][self.time_forecast]
-                    ):
-                        metrics[par_name]["local"]["future"] = self._get_self_metrics(
-                            parameter["data_local"]["future"][self.time_forecast]
-                        )
-
-                        if (
-                            "data" in station_next["parameters"][par_name]
-                        ) and station_next["parameters"][par_name]["data"][
-                            self.time_depth
-                        ]:
-                            metrics[par_name]["local"]["future"].update(
-                                self._get_mutual_metrics(
-                                    station_next["parameters"][par_name]["data"][
-                                        self.time_depth
-                                    ][obs_future_start : obs_future_end + 1],
-                                    parameter["data_local"]["future"][
-                                        self.time_forecast
-                                    ],
-                                )
-                            )
-
-                            metrics[par_name]["local"]["future"].update(
-                                self._get_mutual_daily_metrics(
-                                    station_next["parameters"][par_name]["data"][
-                                        self.time_depth
-                                    ][obs_future_start : obs_future_end + 1],
-                                    parameter["data_local"]["future"][
-                                        self.time_forecast
-                                    ],
-                                )
-                            )
-                    else:
-                        metrics[par_name]["local"]["future"] = {}
-
-                else:
-                    metrics[par_name]["local"]["past"] = {}
-                    metrics[par_name]["local"]["future"] = {}
-
-                # расчет метрик для глобального прогноза
-                if ("om_parameter" in parameter) and (parameter["om_parameter"] != ""):
-                    om_par_name = parameter["om_parameter"]
-
-                    if om_par_name in station_now["predictors_data"]:
-                        if "past" in station_now["predictors_data"][om_par_name] and (
-                            station_now["predictors_data"][om_par_name]["past"][
-                                self.time_depth
-                            ]
-                        ):
-                            metrics[par_name]["global"]["past"] = (
-                                self._get_self_metrics(
-                                    station_now["predictors_data"][om_par_name]["past"][
-                                        self.time_depth
-                                    ]
-                                )
-                            )
-
-                            metrics[par_name]["global"]["past"].update(
-                                self._get_mutual_metrics(
-                                    parameter["data"][self.time_depth],
-                                    station_now["predictors_data"][om_par_name]["past"][
-                                        self.time_depth
-                                    ],
-                                )
-                            )
-                        else:
-                            metrics[par_name]["global"]["past"] = {}
-
-                        if "future" in station_now["predictors_data"][om_par_name] and (
-                            station_now["predictors_data"][om_par_name]["future"][
-                                self.time_forecast
-                            ]
-                        ):
-                            metrics[par_name]["global"]["future"] = (
-                                self._get_self_metrics(
-                                    station_now["predictors_data"][om_par_name][
-                                        "future"
-                                    ][self.time_forecast]
-                                )
-                            )
-
-                            if (
-                                "data" in station_next["parameters"][par_name]
-                            ) and station_next["parameters"][par_name]["data"][
-                                self.time_depth
-                            ]:
-                                metrics[par_name]["global"]["future"].update(
-                                    self._get_mutual_metrics(
-                                        station_next["parameters"][par_name]["data"][
-                                            self.time_depth
-                                        ][obs_future_start : obs_future_end + 1],
-                                        station_now["predictors_data"][om_par_name][
-                                            "future"
-                                        ][self.time_forecast],
-                                    )
-                                )
-
-                                metrics[par_name]["global"]["future"].update(
-                                    self._get_mutual_daily_metrics(
-                                        station_next["parameters"][par_name]["data"][
-                                            self.time_depth
-                                        ][obs_future_start : obs_future_end + 1],
-                                        station_now["predictors_data"][om_par_name][
-                                            "future"
-                                        ][self.time_forecast],
-                                    )
-                                )
-                        else:
-                            metrics[par_name]["global"]["future"] = {}
-
-                    else:
-                        metrics[par_name]["global"]["past"] = {}
-                        metrics[par_name]["global"]["future"] = {}
-                else:
-                    metrics[par_name]["global"]["past"] = {}
-                    metrics[par_name]["global"]["future"] = {}
-            else:
-                metrics[par_name]["obs"] = {}
-                metrics[par_name]["local"]["past"] = {}
-                metrics[par_name]["local"]["future"] = {}
-                metrics[par_name]["global"]["past"] = {}
-                metrics[par_name]["global"]["future"] = {}
-
-        return metrics  # station
+        return metrics

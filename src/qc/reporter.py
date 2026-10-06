@@ -5,12 +5,13 @@ import pickle
 import sys
 
 from plotter_qc import PlotterQC
+from dbreader_qc import DBReaderQC
 from validator import Validator
 from writer import Writer
 
 
 class Reporter:
-    def __init__(self, args: dict, now_dates_forec_obs: dict[str, str]):
+    def __init__(self, args: dict, now_dates: list[datetime.date]):
         self.args = args
 
         self.mode = args["main-args"]["mode"]
@@ -18,6 +19,12 @@ class Reporter:
         self.start_date = args["main-args"]["start-date"]
         self.end_date = args["main-args"]["end-date"]
         # self.step_date = args["main-args"]["step-date"]
+
+        self.server = args["db-args"]["server"]
+        self.port = args["db-args"]["port"]
+        self.user = args["db-args"]["user"]
+        self.password = args["db-args"]["password"]
+        self.database = args["db-args"]["database"]
 
         self.forecast_args = args["forecast-args"]
         self.time_depth = args["forecast-args"]["time-depth"]
@@ -29,10 +36,7 @@ class Reporter:
 
         self.output_folder = args["main-args"]["output-folder"]
 
-        self.now_dates_forec_obs = now_dates_forec_obs
-        self.now_dates = list(
-            set(now_dates_forec_obs.keys()) | set(now_dates_forec_obs.values())
-        )
+        self.now_dates = now_dates
 
         # Словарь для хранения считанных данных
         self.in_data = {}
@@ -51,7 +55,7 @@ class Reporter:
             for now_date in self.now_dates
         ]
 
-        # Проверка, что все фалы из сгенерированного списка присутствуют в указанной директории с данными
+        # Проверка, что все файлы из сгенерированного списка присутствуют в указанной директории с данными
         flag = True
         for fname in self.in_files:
             if not os.path.exists(fname):
@@ -63,7 +67,7 @@ class Reporter:
             logging.info("Остановка программы")
             sys.exit(1)
 
-    def _combine_obs_forecasts(self) -> dict:
+    def _get_data(self) -> dict:
         logging.info("Агрегация данных для дальнейшей отрисовки или экспорта")
         logging.info(
             "Сведение данных наблюдений от разных прогнозов на одну ось по времени"
@@ -72,7 +76,7 @@ class Reporter:
         # { "stations": {
         #   "code": {"full_name", "lat", "lon",
         #       "parameters": {
-        #           <par_name>: {"code", "name", "om_parameter",
+        #           <par_name>: {"code", "name", "no_value", "om_parameter",
         #                       "obs": {datetime: float, ...}, # использовать setdefault()
         #                       "local": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
         #                               "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}},
@@ -121,6 +125,7 @@ class Reporter:
                         data_dict["stations"][st_code]["parameters"][par_name] = {
                             "code": par_info["code"],
                             "full_name": par_info["full_name"],
+                            "no_value": par_info["no_value"],
                             "om_parameter": par_info["om_parameter"],
                             "obs": {},
                             "local": {"past": {}, "future": {}},
@@ -217,7 +222,7 @@ class Reporter:
         # { "stations": {
         #   "code": {"full_name", "lat", "lon",
         #       "parameters": {
-        #           <par_name>: {"code", "full_name", "om_parameter",
+        #           <par_name>: {"code", "full_name", "no_value", "om_parameter",
         #                       "obs": [float, ...],
         #                       "local": {"past": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}
         #                               "future": {<now_date>: {"data": [float, ...], "timeline":[datetime, ...]}, ...}},
@@ -242,42 +247,95 @@ class Reporter:
 
         return data_dict
 
-    def _get_metrics(self) -> dict[str, list]:
+    def _get_obs_data(self, data_obs_forec: dict) -> dict:
+        logging.info(
+            "Считывание наблюдений из БД (замена и дополнение данных наблюдений из pkl-файлов)"
+        )
+
+        data = data_obs_forec
+
+        db_reader = DBReaderQC(
+            self.server, self.port, self.user, self.password, self.database
+        )
+
+        if db_reader.connect():
+            for station_code, station_info in data["stations"].items():
+                station_info["parameters"] = db_reader.get_data(
+                    station_code,
+                    station_info["lat"],
+                    station_info["lon"],
+                    station_info["parameters"],
+                    data["obs_timeline"],
+                )
+
+        return data
+
+    def _get_metrics(self, data_obs_forec: dict) -> dict:
         logging.info("Вычисление метрик")
 
         validator = Validator(self.time_depth, self.time_forecast)
 
         metrics = {}
 
-        # for idx_now_date, now_date in enumerate(self.now_dates[:-1]):
-        for now_date_str, now_date_next_str in self.now_dates_forec_obs.items():
-
-            stations_now = self.in_data[now_date_str]["stations"]
-            stations_next = self.in_data[now_date_next_str]["stations"]
-
+        for now_date in self.now_dates:
+            now_date_str = str(now_date)
             metrics[now_date_str] = {}
 
-            for idx_station, (station_now, station_next) in enumerate(
-                zip(stations_now, stations_next)
-            ):
-                if station_now["code"] != station_next["code"]:
-                    logging.error(
-                        "Рассинхронизация порядка записи станций с кодами: %s и %s",
-                        station_now["code"],
-                        station_next["code"],
+            for station_code, station_info in data_obs_forec["stations"].items():
+                for par_name, par_info in station_info["parameters"].items():
+                    logging.info(
+                        "Старт прогноза [%s]: станция %s - %s, параметр [%s]",
+                        now_date_str,
+                        station_code,
+                        station_info["full_name"],
+                        par_name,
                     )
-                    logging.info("Остановка программы")
-                    sys.exit(1)
 
-                logging.info(
-                    "Дата старта прогноза [%s]: станция [%s] %s",
-                    now_date_str,
-                    station_now["code"],
-                    station_now["full_name"],
-                )
+                    timeline_past = station_info["parameters"][par_name]["local"][
+                        "past"
+                    ][now_date_str]["timeline"]
 
-                st_metrics = validator.get_metrics(station_now, station_next)
-                metrics[now_date_str][station_now["code"]] = st_metrics
+                    timeline_future = station_info["parameters"][par_name]["local"][
+                        "future"
+                    ][now_date_str]["timeline"]
+
+                    idx_start_past = data_obs_forec["obs_timeline"].index(
+                        timeline_past[0]
+                    )
+                    idx_now_past = data_obs_forec["obs_timeline"].index(
+                        timeline_past[-1]
+                    )
+                    idx_now_future = data_obs_forec["obs_timeline"].index(
+                        timeline_future[0]
+                    )
+                    idx_end_future = data_obs_forec["obs_timeline"].index(
+                        timeline_future[-1]
+                    )
+
+                    data_obs = {
+                        "past": par_info["obs"][idx_start_past : idx_now_past + 1],
+                        "future": par_info["obs"][idx_now_future : idx_end_future + 1],
+                    }
+
+                    data_local = {
+                        "past": par_info["local"]["past"][now_date_str]["data"],
+                        "future": par_info["local"]["future"][now_date_str]["data"],
+                    }
+
+                    if "global" in par_info and par_info["global"]:
+                        data_global = {
+                            "past": par_info["global"]["past"][now_date_str]["data"],
+                            "future": par_info["global"]["future"][now_date_str][
+                                "data"
+                            ],
+                        }
+                    else:
+                        data_global = {"past": [], "future": []}
+
+                    st_par_metrics = validator.get_metrics(
+                        data_obs, data_local, data_global
+                    )
+                    metrics[now_date_str][station_code] = {par_name: st_par_metrics}
 
         return metrics
 
@@ -296,49 +354,32 @@ class Reporter:
             }
 
     def gen_qc_report(self) -> None:
-        def check_obs_avail_for_now_date_forecast() -> bool:
-            result = True
-
-            for now_date_str, now_date_next_str in self.now_dates_forec_obs.items():
-                if set(
-                    self.timelines[now_date_str]["future"][self.time_forecast]
-                ) < set(self.timelines[now_date_next_str]["past"][self.time_depth]):
-                    pass
-                else:
-                    logging.error(
-                        "Отсутствуют наблюдения для прогноза от %s в файле с прогнозом от %s",
-                        now_date_str,
-                        now_date_next_str,
-                    )
-                    result = False
-
-            return result
-
         logging.info("Генерация QC-отчета")
 
         # Загрузка данных из pkl-файлов
         self._load_data()
 
-        # Проверка наличия наблюдений для прогнозов
-        if check_obs_avail_for_now_date_forecast():
+        # Агрегация данных для дальнейшей отрисовки или экспорта
+        data_obs_forec = self._get_data()
 
-            # Генерация сводных xlsx-файлов с оценками
-            logging.info("Генерация сводных xlsx-файлов с оценками")
-            metrics = self._get_metrics()
-            writer = Writer(self.args)
-            writer.write_metrics(self.in_data, metrics)
+        # Cчитывание наблюдений из БД (замена и дополнение данных наблюдений из pkl-файлов)
+        data_obs_forec = self._get_obs_data(data_obs_forec)
 
-            # Агрегация данных для дальнейшей отрисовки или экспорта
-            data_obs_forec = self._combine_obs_forecasts()
+        # Расчет метрик для каждого прогноза и каждой станции
+        metrics = self._get_metrics(data_obs_forec)
 
-            # Генерация сводных рисунков с наблюдениями и прогнозами
-            plotter_qc = PlotterQC(self.args, self.now_dates_forec_obs, data_obs_forec)
-            plotter_qc.make_plots()
+        # Генерация сводных xlsx-файлов с оценками
+        logging.info("Генерация сводных xlsx-файлов с оценками")
+        writer = Writer(self.args)
+        writer.write_metrics(self.in_data, metrics)
 
-        else:
-            logging.info("Не для всех прогнозов наблюдения в наличии.")
-            logging.info("Остановка программы")
-            sys.exit(1)
+        # Генерация сводных рисунков с наблюдениями и прогнозами
+        plotter_qc = PlotterQC(
+            self.args,
+            [str(now_date) for now_date in self.now_dates],
+            data_obs_forec,
+        )
+        plotter_qc.make_plots()
 
     def export_data(self):
         logging.info("Экспорт данных")
@@ -347,11 +388,12 @@ class Reporter:
         self._load_data()
 
         # Агрегация данных для дальнейшей отрисовки или экспорта
-        data_obs_forec = self._combine_obs_forecasts()
+        # data_obs_forec = self._combine_obs_forecasts()
+        data_obs_forec = self._get_data()
 
         # Генерация сводных xlsx-файлов с данными
         logging.info("Генерация сводных xlsx-файлов с данными")
         writer = Writer(self.args)
         writer.write_data(
-            self.in_data, data_obs_forec, list(self.now_dates_forec_obs.keys())
+            self.in_data, data_obs_forec, [str(now_date) for now_date in self.now_dates]
         )

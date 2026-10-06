@@ -103,6 +103,7 @@ def init() -> dict:
     config_forecast = ConfigParser()
     config_forecast.read(config_forecast_file, encoding="utf8")
 
+    db_args = config_forecast["DB"]
     forecast_main_config = config_forecast["main"]
 
     log_folder = forecast_main_config["log-folder"]
@@ -164,14 +165,6 @@ def init() -> dict:
         )
         return {}
 
-    if int(forecast_args["time-depth"][:-1]) <= int(
-        forecast_args["time-forecast"][:-1]
-    ):
-        logging.error(
-            "В режиме QC период обучения (time-depth) должен быть строго больше периода прогноза (time-forecast)"
-        )
-        return {}
-
     if (
         main_args["mode"] == "qc" and main_args["case"] == "forecast_prepared"
     ) or main_args["mode"] == "export":
@@ -185,6 +178,7 @@ def init() -> dict:
     return {
         "main-args": main_args,
         "forecast-args": forecast_args,
+        "db-args": db_args,
         "data-args": {
             # "log-folder": log_folder,
             "data-folder": data_folder,
@@ -254,33 +248,6 @@ def main():
         start_date + datetime.timedelta(days=step_days * x) for x in range(n_steps)
     ]
 
-    # Добавление дополнительных прогнозов, чтобы было достаточно наблюдений для оценки качества
-    # создание словаря соответствия целевого прогноза и прогноза с наблюдениями
-    # Если для каких-то целевых прогнозов нет прогнозов с наблюдениями, то добавить их в расчет и проверку наличия
-    date_forec_obs = {}
-    for now_date in now_dates:
-        now_dates_with_obs = [
-            now_date + datetime.timedelta(days=dd)
-            for dd in range(
-                int(args["forecast-args"]["time-forecast"][:-1]) + 1,
-                int(args["forecast-args"]["time-depth"][:-1]) + 1,
-                1,
-            )
-        ]
-        if not now_dates_with_obs:
-            now_dates_with_obs = [
-                now_date
-                + datetime.timedelta(
-                    days=int(args["forecast-args"]["time-depth"][:-1]) + 1
-                )
-            ]
-        obs_in_now_dates = set(now_dates) & set(now_dates_with_obs)
-        date_forec_obs[str(now_date)] = (
-            str(list(obs_in_now_dates)[0])
-            if obs_in_now_dates
-            else str(now_dates_with_obs[0])
-        )
-
     if args["main-args"]["mode"] == "qc":
         logging.info("Запуск в режиме генерации QC-отчета")
 
@@ -297,18 +264,14 @@ def main():
             # result = Parallel(j_jobs=-1)(delayed_calls)
 
             # Последовательный запуск расчета прогнозов
-            dates_forec_list = sorted(
-                list(set(date_forec_obs.keys()) | set(date_forec_obs.values()))
-            )
-
             logging.info(
                 "Будет рассчитано %s прогнозов для следующих дат: %s",
-                len(dates_forec_list),
-                dates_forec_list,
+                len(now_dates),
+                now_dates,
             )
 
-            for now_date in dates_forec_list:
-                run_forecast(forecast_main_program, args, now_date)
+            for now_date in now_dates:
+                run_forecast(forecast_main_program, args, str(now_date))
 
         elif args["main-args"]["case"] == "forecast_prepared":
             logging.info(
@@ -316,12 +279,12 @@ def main():
             )
 
         logging.info("Запуск генерации QC-отчета")
-        qc_reporter = Reporter(args, date_forec_obs)
+        qc_reporter = Reporter(args, now_dates)
         qc_reporter.gen_qc_report()
 
     if args["main-args"]["mode"] == "export":
         logging.info("Запуск экспорта данных")
-        exporter = Reporter(args, date_forec_obs)
+        exporter = Reporter(args, now_dates)
         exporter.export_data()
 
     logging.info("Заканчиваем работу")
