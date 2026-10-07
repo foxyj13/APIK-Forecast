@@ -33,6 +33,7 @@ images/
 images_save/
 input/
 log/
+run/*_ru.*
 web/
 qc_reports/
 qc_reports*/
