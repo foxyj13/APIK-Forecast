@@ -98,7 +98,6 @@ def init() -> dict:
     # Чтение настроек и определение режима работы: генерация QC-отчета или Экспорт данных
     config = ConfigParser()
     config.read(fargs, encoding="utf8")
-    print(config.sections())
 
     main_args = dict(config["ARGS"])
     forecast_args = dict(config["FORECAST_ARGS"])
