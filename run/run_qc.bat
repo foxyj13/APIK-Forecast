@@ -44,6 +44,7 @@ echo Configuration file: %FARGS%
 
 echo Starting QC calculation
 
+cd "%PROJECT_ROOT%"
 "%PROJECT_ROOT%\.venv\Scripts\python.exe" "%PROJECT_ROOT%\src\qc\main.py" --fargs=%FARGS%
 
 pause

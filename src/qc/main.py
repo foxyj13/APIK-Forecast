@@ -91,9 +91,14 @@ def init() -> dict:
     input_args = parser.parse_args()
     fargs = input_args.fargs
 
+    if not os.path.exists(fargs):
+        print(f"Файл с аргументами запуска программы не найден: {fargs}")
+        return {}
+
     # Чтение настроек и определение режима работы: генерация QC-отчета или Экспорт данных
     config = ConfigParser()
     config.read(fargs, encoding="utf8")
+    print(config.sections())
 
     main_args = dict(config["ARGS"])
     forecast_args = dict(config["FORECAST_ARGS"])

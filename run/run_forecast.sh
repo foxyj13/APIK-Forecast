@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CFG_FILE="$PROJECT_ROOT/config/$CFG_FILENAME"
 
+# Add python path to the environment variable
+export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
+
 # 2. Check whether the configuration file exists
 if [[ ! -f "$CFG_FILE" ]]; then
     echo "[ERROR] The file with arguments for starting the forecast was not found: $CFG_FILE" >&2
@@ -50,4 +53,5 @@ echo "Current date : ${NOW_DATE:-Not specified}"
 echo "Configuration file : ${CONFIG_FILE:-Not specified}"
 echo "-----------------------------------"
 
-"$PROJECT_ROOT/.venv/Scripts/python.exe" "$PROJECT_ROOT/src/forecast/main.py" --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --data-missings-percent=$DATA_MISSINGS_PERCENT --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE
+cd $PROJECT_ROOT
+"$PROJECT_ROOT/.venv/bin/python" "$PROJECT_ROOT/src/forecast/main.py" --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --data-missings-percent=$DATA_MISSINGS_PERCENT --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE

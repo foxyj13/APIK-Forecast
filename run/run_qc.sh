@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CFG_FILE="$PROJECT_ROOT/config/$CFG_FILENAME"
 
+# Add python path to the environment variable
+export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
+
 # 2. Check whether the configuration file exists
 if [[ ! -f "$CFG_FILE" ]]; then
     echo "[ERROR] The file with arguments for starting the QC report generation was not found: $CFG_FILE" >&2
@@ -43,4 +46,5 @@ echo "-----------------------------------"
 echo "Configuration file : ${FARGS:-Not specified}"
 echo "-----------------------------------"
 
-"$PROJECT_ROOT/.venv/Scripts/python.exe" "$PROJECT_ROOT/src/qc/main.py" --fargs=$FARGS
+cd $PROJECT_ROOT
+"$PROJECT_ROOT/.venv/bin/python" "$PROJECT_ROOT/src/qc/main.py" --fargs=$FARGS

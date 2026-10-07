@@ -51,6 +51,7 @@ echo Configuration file: %CONFIG_FILE%
 
 echo Starting forecast calculation
 
+cd "%PROJECT_ROOT%"
 "%PROJECT_ROOT%\.venv\Scripts\python.exe" "%PROJECT_ROOT%\src\forecast\main.py" --mode=%MODE% --add-globforecast-plot=%ADD_GLOBFORECAST_PLOT% --time-depth=%TIME_DEPTH% --time-forecast=%TIME_FORECAST% --data-missings-percent=%DATA_MISSINGS_PERCENT% --forecast-type=%FORECAST_TYPE% --now-date=%NOW_DATE% --config=%CONFIG_FILE%
 
 pause
