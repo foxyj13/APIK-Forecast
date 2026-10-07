@@ -2,51 +2,52 @@
 
 CFG_FILENAME="run_forecast.cfg"
 
-# 1. Находим директорию скрипта (работает надежно в Bash)
+# 1. Specify the script directory (works reliably in Bash)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CFG_FILE="$SCRIPT_DIR/../config/$CFG_FILENAME"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CFG_FILE="$PROJECT_ROOT/config/$CFG_FILENAME"
 
-# 2. Проверяем, существует ли файл конфигурации
+# 2. Check whether the configuration file exists
 if [[ ! -f "$CFG_FILE" ]]; then
-    echo "[ОШИБКА] Файл с аргументами для запуска прогноза не найден: $CFG_FILE" >&2
+    echo "[ERROR] The file with arguments for starting the forecast was not found: $CFG_FILE" >&2
     exit 1
 fi
 
-# 3. Читаем файл построчно средствами Bash
+# 3. Read the file line by line using Bash
 while IFS='=' read -r key val || [[ -n "$key" ]]; do
-    # Удаляем пробелы в начале и конце ключа
+    # Remove spaces at the beginning and end of the key
     key="${key##*( )}"
     key="${key%%*( )}"
     
-    # Пропускаем пустые строки и комментарии, начинающиеся с #
+    # Skip empty lines and comments starting with #
     [[ -z "$key" || "$key" =~ ^# ]] && continue
 
-    # Удаляем пробелы в начале и конце значения
+    # Remove spaces at the beginning and end of the value
     val="${val##*( )}"
     val="${val%%*( )}"
 
-    # Опционально: очищаем окружающие кавычки, если они есть (например, "value" -> value)
+    # Optionally: strip surrounding quotes, if they exist (e.g., "value" -> value)
     val="${val#\"}"
     val="${val%\"}"
     val="${val#\'}"
     val="${val%\'}"
 
-    # Динамически объявляем переменную в текущем окружении Bash
+    # Dynamically declare a variable in the current Bash environment
     printf -v "$key" "%s" "$val"
 
 done < "$CFG_FILE"
 
-# 4. Проверяем работу загруженных переменных
-echo "Загрузка аргументов завершена."
+# 4. Check the work of the loaded variables
+echo "Argument loading completed."
 echo "-----------------------------------"
-echo "Режим расчета : ${MODE:-Не задан}"
-echo "Ключ отрисовки глобального прогноза : ${ADD_GLOBFORECAST_PLOT:-Не задан}"
-echo "Период обучения : ${TIME_DEPTH:-Не задан}"
-echo "Период прогноза : ${TIME_FORECAST:-Не задан}"
-echo "Максимальное кол-во пропусков : ${DATA_MISSINGS_PERCENT:-Не задан}"
-echo "Тип глобального прогноза : ${FORECAST_TYPE:-Не задан}"
-echo "Текущая дата : ${NOW_DATE:-Не задан}"
-echo "Конфигурационный файл : ${CONFIG_FILE:-Не задан}"
+echo "Calculation mode : ${MODE:-Not specified}"
+echo "Global forecast plot flag : ${ADD_GLOBFORECAST_PLOT:-Not specified}"
+echo "Training period : ${TIME_DEPTH:-Not specified}"
+echo "Forecast period : ${TIME_FORECAST:-Not specified}"
+echo "Maximum number of missing values : ${DATA_MISSINGS_PERCENT:-Not specified}"
+echo "Global forecast type : ${FORECAST_TYPE:-Not specified}"
+echo "Current date : ${NOW_DATE:-Not specified}"
+echo "Configuration file : ${CONFIG_FILE:-Not specified}"
 echo "-----------------------------------"
 
-python ../src/forecast/main.py --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --data-missings-percent=$DATA_MISSINGS_PERCENT --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE
+"$PROJECT_ROOT/.venv/Scripts/python.exe" "$PROJECT_ROOT/src/forecast/main.py" --mode=$MODE --add-globforecast-plot=$ADD_GLOBFORECAST_PLOT --time-depth=$TIME_DEPTH --time-forecast=$TIME_FORECAST --data-missings-percent=$DATA_MISSINGS_PERCENT --forecast-type=$FORECAST_TYPE --now-date=$NOW_DATE --config=$CONFIG_FILE

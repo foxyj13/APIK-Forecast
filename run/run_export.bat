@@ -4,40 +4,46 @@ setlocal EnableDelayedExpansion
 
 set "CFG_FILENAME=run_export.cfg"
 
-:: 1. Указываем путь к файлу конфигурации
+:: 0. Specify the project root directory
+set "PROJECT_ROOT=%~dp0.."
+
+:: Add python path to the environment variable
+set "PYTHONPATH=%PYTHONPATH%;%PROJECT_ROOT%"
+
+:: 1. Specify the path to the configuration file
 set "cfg_file=%~dp0..\config\%CFG_FILENAME%"
 
-:: 2. Проверяем, существует ли файл
+:: 2. Check whether the file exists
 if not exist "%cfg_file%" (
-    echo [ОШИБКА] Файл с аргументами для запуска прогноза не найден: %cfg_file%
+    echo [ERROR] The file with arguments for starting the export was not found: %cfg_file%
     pause
     exit /b
 )
 
-:: 3. Читаем файл, игнорируя пустые строки и комментарии с #
-:: eol=#     - пропускает строки, начинающиеся с #
-:: tokens=1* - делит строку на две части (до первого знака "=" и после него)
-:: delims==  - использует знак "=" как разделитель
+:: 3. Read the file, ignoring empty lines and comments with #
+:: eol=#     - skips lines starting with #
+:: tokens=1* - splits the line into two parts (before the first "=" and after it)
+:: delims==  - uses the "=" sign as a delimiter
 for /f "usebackq eol=# tokens=1* delims==" %%A in ("!cfg_file!") do (
-    :: Удаляем возможные пробелы вокруг имени аргумента и значения
+    :: Remove possible spaces around the argument name and value
     set "key=%%A"
     set "val=%%B"
     
-    :: Очищаем имя от пробелов на конце (если они есть)
+    :: Trim trailing spaces from the name (if any)
     for /f "tokens=1" %%X in ("!key!") do set "key=%%X"
     
-    :: Сохраняем аргумент, если имя не оказалось пустым
+    :: Save the argument if the name is not empty
     if not "!key!"=="" (
         set "!key!=!val!"
     )
 )
 
-:: 4. Проверяем, как загрузились наши аргументы
-echo Загрузка аргументов завершена.
-echo Конфигурационный файл: %FARGS%
+:: 4. Check how our arguments were loaded
+echo Argument loading completed.
+echo Configuration file: %FARGS%
 
-echo Запуск расчета прогноза
+echo Starting export calculation
 
-python ..\src\qc\main.py --fargs=%FARGS%
+"%PROJECT_ROOT%\.venv\Scripts\python.exe" "%PROJECT_ROOT%\src\export\main.py" --fargs=%FARGS%
 
 pause
