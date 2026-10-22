@@ -407,7 +407,7 @@ class Plotter:
             )
 
             plt.savefig(
-                out_filename,
+                cp_out_filename,
                 edgecolor=fig.get_edgecolor(),
                 facecolor=fig.get_facecolor(),
                 dpi=150,
