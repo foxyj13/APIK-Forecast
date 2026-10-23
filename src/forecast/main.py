@@ -325,7 +325,10 @@ def write_js_station_parameter_forecast_info(
                 par_str = f"{par_str}\nОбработка: расчет среднего по всем моделям"
             else:
                 ml_config_par = ml_config.get(par_name, ml_config["default"])
-                par_str = f"{par_str}\nОбработка: выбор лучше по {ml_config_par['best-result-metrics'].upper()} на обучающем периоде: [{par_info['chosen_model']['model']}]"
+                if par_info["chosen_model"] and "model" in par_info["chosen_model"]:
+                    par_str = f"{par_str}\nОбработка: выбор лучше по {ml_config_par['best-result-metrics'].upper()} на обучающем периоде: [{par_info['chosen_model']['model']}]"
+                else:
+                    par_str = f"{par_str}\nОбработка: выбор лучше по {ml_config_par['best-result-metrics'].upper()} на обучающем периоде: не осуществлен"
 
         # Станция: 50000028 - Аршан (51.91 с.ш., 102.43 в.д.)
         # Метеопараметр: ta - <Сокращенное название> (код 4402)
