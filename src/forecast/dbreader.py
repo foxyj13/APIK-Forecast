@@ -721,9 +721,11 @@ class DBReader:
             for par_name, par_info in parameters.items():
                 data_orig = par_info[past_type][time_depth]
 
+                to_hourly = []
+
                 if par_name == "prc":
                     # Для осадков используем накопление (сумму) за предыдущий час, а не ближайшее значение
-                    to_hourly = []
+
                     for t in timeline_ref:
                         start_time = t - datetime.timedelta(hours=1)
                         end_time = t
@@ -786,7 +788,7 @@ class DBReader:
 
                         to_hourly.append(hourly_data)
 
-                    par_info["data"][time_depth] = to_hourly
+                    par_info[past_type][time_depth] = to_hourly
 
             return timelines, parameters
 

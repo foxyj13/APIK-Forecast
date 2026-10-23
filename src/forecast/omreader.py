@@ -22,7 +22,7 @@ class OMReader:
         self.openmeteo = None
 
     def connect(self):
-        logging.info("Подключаю Open-Meteo API клиента")
+        # logging.info("Подключаю Open-Meteo API клиента")
 
         try:
             # Setup the Open-Meteo API client with a cache and retry mechanism
@@ -34,7 +34,7 @@ class OMReader:
             logging.error("Exception: %s", ex)
             return False
 
-        logging.info("OK!")
+        # logging.info("OK!")
         return True
 
     def get_model_data(
