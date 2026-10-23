@@ -127,7 +127,10 @@ class DBReader:
                                 x for x in data_orig[idx_start:idx_end] if x is not None
                             ]
                             if sub_data_orig:
-                                hourly_sum = float(sum(sub_data_orig))
+                                sum_prc = sum(sub_data_orig)
+                                hourly_sum = (
+                                    float(sum_prc) if sum_prc is not None else None
+                                )
                             else:
                                 hourly_sum = None
 
@@ -167,7 +170,11 @@ class DBReader:
 
                                 min_idx = diff_timeline.index(min(diff_timeline))
 
-                                hourly_data = float(sub_data_orig[min_idx])
+                                hourly_data = (
+                                    float(sub_data_orig[min_idx])
+                                    if sub_data_orig[min_idx] is not None
+                                    else None
+                                )
 
                                 # print(f"{t}: ({start_t}, {end_t}]: {sub_timeline_orig}")
                             else:
@@ -498,7 +505,8 @@ class DBReader:
                             x for x in data_orig[idx_start:idx_end] if x is not None
                         ]
                         if sub_data_orig:
-                            hourly_sum = float(sum(sub_data_orig))
+                            sum_prc = sum(sub_data_orig)
+                            hourly_sum = float(sum_prc) if sum_prc is not None else None
                         else:
                             hourly_sum = None
 
@@ -540,7 +548,11 @@ class DBReader:
 
                             min_idx = diff_timeline.index(min(diff_timeline))
 
-                            hourly_data = float(sub_data_orig[min_idx])
+                            hourly_data = (
+                                float(sub_data_orig[min_idx])
+                                if sub_data_orig[min_idx] is not None
+                                else None
+                            )
 
                             # print(f"{t}: ({start_t}, {end_t}]: {sub_timeline_orig}")
                         else:
@@ -742,7 +754,8 @@ class DBReader:
                             x for x in data_orig[idx_start:idx_end] if x is not None
                         ]
                         if sub_data_orig:
-                            hourly_sum = float(sum(sub_data_orig))
+                            sum_prc = sum(sub_data_orig)
+                            hourly_sum = float(sum_prc) if sum_prc is not None else None
                         else:
                             hourly_sum = None
 
@@ -780,7 +793,11 @@ class DBReader:
 
                             min_idx = diff_timeline.index(min(diff_timeline))
 
-                            hourly_data = float(sub_data_orig[min_idx])
+                            hourly_data = (
+                                float(sub_data_orig[min_idx])
+                                if sub_data_orig[min_idx] is not None
+                                else None
+                            )
 
                             # print(f"{t}: ({start_t}, {end_t}]: {sub_timeline_orig}")
                         else:
