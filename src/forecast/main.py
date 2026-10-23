@@ -314,8 +314,11 @@ def write_js_station_parameter_forecast_info(
         }
         max_len = max([len(model_str) for model, model_str in models_cfg.items()])
         for model, model_str in models_cfg.items():
-            train_metrics = par_info["models"][model]["train_metrics"]
-            par_str = f"{par_str}\n[{model_str}]: {' ' * (max_len - len(model_str))}R2 = {train_metrics['r2']:.6f}, RMSE = {train_metrics['rmse']:.6f}, MAE = {train_metrics['mae']:.6f}"
+            if "train_metrics" in par_info["models"][model]:
+                train_metrics = par_info["models"][model]["train_metrics"]
+                par_str = f"{par_str}\n[{model_str}]: {' ' * (max_len - len(model_str))}R2 = {train_metrics['r2']:.6f}, RMSE = {train_metrics['rmse']:.6f}, MAE = {train_metrics['mae']:.6f}"
+            else:
+                par_str = f"{par_str}\n[{model_str}]: {' ' * (max_len - len(model_str))}Не удалось построить прогноз"
 
         if len(models_cfg) > 1:
             if par_info["chosen_model"] == "mean":
